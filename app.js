@@ -51,7 +51,7 @@ function render() {
 function renderLibrary() {
   return `<header class="topbar"><div><div class="eyebrow">MEU ESPAÇO</div><h1>Seus diagramas</h1></div><div class="top-actions"><button class="button secondary" id="importButton">Importar Mermaid</button><button class="button primary" id="newDiagramTop">＋ Novo diagrama</button></div></header>
     <section class="library-wrap"><div class="library-heading"><div><h2>Diagramas</h2><p>Organize suas ideias em pastas e abra qualquer quadro para editar.</p></div><div class="search-wrap"><span>⌕</span><input id="searchDiagrams" placeholder="Buscar diagramas" /></div></div>
-    ${state.diagrams.length ? `<div class="diagram-grid" id="diagramGrid">${state.diagrams.map(d => `<article class="diagram-card" data-card="${d.id}"><button class="card-open" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}" title="Opções">···</button></div><div class="card-sub"><span>▰ ${escapeHtml(state.folders.find(f => f.id === d.folderId)?.name || "Sem pasta")}</span><span>· ${formatDate(d.updatedAt || d.createdAt)}</span></div></div></button></article>`).join("")}</div>` : `<div class="empty-state"><div class="empty-illustration"><span>▱</span><span>✦</span></div><h2>Seu primeiro quadro começa aqui</h2><p>Crie um diagrama e organize o espaço com Mermaid e notas adesivas.</p><button class="button primary" id="emptyNewDiagram">＋ Criar diagrama</button></div>`}
+    ${state.diagrams.length ? `<div class="diagram-grid" id="diagramGrid">${state.diagrams.map(d => `<article class="diagram-card" data-card="${d.id}"><div class="card-open" role="button" tabindex="0" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}" title="Opções">···</button></div><div class="card-sub"><span>▰ ${escapeHtml(state.folders.find(f => f.id === d.folderId)?.name || "Sem pasta")}</span><span>· ${formatDate(d.updatedAt || d.createdAt)}</span></div></div></div></article>`).join("")}</div>` : `<div class="empty-state"><div class="empty-illustration"><span>▱</span><span>✦</span></div><h2>Seu primeiro quadro começa aqui</h2><p>Crie um diagrama e organize o espaço com Mermaid e notas adesivas.</p><button class="button primary" id="emptyNewDiagram">＋ Criar diagrama</button></div>`}
     </section>`;
 }
 
@@ -87,7 +87,10 @@ function bindShell() {
   document.getElementById("allDiagrams")?.addEventListener("click", () => { state.activeDiagramId = null; render(); });
   document.querySelectorAll("[data-folder]").forEach(el => el.addEventListener("click", () => showFolder(el.dataset.folder)));
   document.querySelectorAll("[data-folder-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); folderMenu(el.dataset.folderMenu); }));
-  document.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => openDiagram(el.dataset.open)));
+  document.querySelectorAll("[data-open]").forEach(el => {
+    el.addEventListener("click", () => openDiagram(el.dataset.open));
+    el.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDiagram(el.dataset.open); } });
+  });
   document.querySelectorAll("[data-diagram-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); diagramMenu(el.dataset.diagramMenu); }));
   document.getElementById("searchDiagrams")?.addEventListener("input", ev => {
     document.querySelectorAll("[data-card]").forEach(card => card.hidden = !card.textContent.toLowerCase().includes(ev.target.value.toLowerCase()));
@@ -112,10 +115,13 @@ function showFolder(folderId) {
   const folder = state.folders.find(f => f.id === folderId);
   const main = document.querySelector(".main");
   const items = state.diagrams.filter(d => d.folderId === folderId);
-  main.innerHTML = `<header class="topbar"><div><div class="eyebrow">PASTA</div><h1>${escapeHtml(folder?.name || "Pasta")}</h1></div><div class="top-actions"><button class="button primary" id="newInFolder">＋ Novo diagrama</button></div></header><section class="library-wrap"><div class="library-heading"><div><h2>Diagramas nesta pasta</h2><p>${items.length} diagramas</p></div></div>${items.length ? `<div class="diagram-grid">${items.map(d => `<article class="diagram-card"><button class="card-open" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}">···</button></div><div class="card-sub"><span>${formatDate(d.updatedAt || d.createdAt)}</span></div></div></button></article>`).join("")}</div>` : `<div class="empty-state compact"><div class="empty-illustration"><span>▰</span></div><h2>Esta pasta está vazia</h2><p>Crie um diagrama dentro dela.</p><button class="button primary" id="newInFolder2">＋ Novo diagrama</button></div>`}</section>`;
+  main.innerHTML = `<header class="topbar"><div><div class="eyebrow">PASTA</div><h1>${escapeHtml(folder?.name || "Pasta")}</h1></div><div class="top-actions"><button class="button primary" id="newInFolder">＋ Novo diagrama</button></div></header><section class="library-wrap"><div class="library-heading"><div><h2>Diagramas nesta pasta</h2><p>${items.length} diagramas</p></div></div>${items.length ? `<div class="diagram-grid">${items.map(d => `<article class="diagram-card"><div class="card-open" role="button" tabindex="0" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}">···</button></div><div class="card-sub"><span>${formatDate(d.updatedAt || d.createdAt)}</span></div></div></div></article>`).join("")}</div>` : `<div class="empty-state compact"><div class="empty-illustration"><span>▰</span></div><h2>Esta pasta está vazia</h2><p>Crie um diagrama dentro dela.</p><button class="button primary" id="newInFolder2">＋ Novo diagrama</button></div>`}</section>`;
   document.getElementById("newInFolder")?.addEventListener("click", () => createDiagram(folderId));
   document.getElementById("newInFolder2")?.addEventListener("click", () => createDiagram(folderId));
-  document.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => openDiagram(el.dataset.open)));
+  document.querySelectorAll("[data-open]").forEach(el => {
+    el.addEventListener("click", () => openDiagram(el.dataset.open));
+    el.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDiagram(el.dataset.open); } });
+  });
   document.querySelectorAll("[data-diagram-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); diagramMenu(el.dataset.diagramMenu); }));
 }
 
