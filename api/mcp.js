@@ -3,7 +3,9 @@ import * as z from "zod/v4";
 import { validBearer } from "../lib/auth.js";
 import { readWorkspace, writeWorkspace } from "../lib/workspace.js";
 
-const handler = createMcpHandler(() => {
+function makeHandler(appOrigin) {
+  const diagramUrl = (diagramId) => new URL(`/?diagram=${encodeURIComponent(diagramId)}`, appOrigin).toString();
+  return createMcpHandler(() => {
   const server = new McpServer({ name: "vli-diagrams", version: "1.0.0" });
   const text = (value) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }] });
   const makeId = () => crypto.randomUUID();
@@ -32,13 +34,13 @@ const handler = createMcpHandler(() => {
     description: "Lista os diagramas, com IDs, pasta e data de atualização.", inputSchema: z.object({ folder_id: z.string().optional() })
   }, async ({ folder_id }) => {
     const state = await readWorkspace();
-    return text(state.diagrams.filter(item => !folder_id || item.folderId === folder_id).map(({ id, title, folderId, updatedAt, createdAt }) => ({ id, title, folderId, updatedAt, createdAt })));
+    return text(state.diagrams.filter(item => !folder_id || item.folderId === folder_id).map(({ id, title, folderId, updatedAt, createdAt }) => ({ id, title, folderId, updatedAt, createdAt, url: diagramUrl(id) })));
   });
   server.registerTool("get_diagram", {
     description: "Lê um diagrama completo pelo ID, incluindo suas formas, conectores e código Mermaid.", inputSchema: z.object({ diagram_id: z.string() })
   }, async ({ diagram_id }) => {
     const diagram = (await readWorkspace()).diagrams.find(item => item.id === diagram_id);
-    return text(diagram || "Diagrama não encontrado.");
+    return text(diagram ? { ...diagram, url: diagramUrl(diagram.id) } : "Diagrama não encontrado.");
   });
   server.registerTool("create_diagram", {
     description: "Cria um diagrama vazio em uma pasta opcional.", inputSchema: z.object({ title: z.string().min(1).max(160), folder_id: z.string().optional() })
@@ -46,7 +48,7 @@ const handler = createMcpHandler(() => {
     const state = await readWorkspace();
     if (folder_id && !state.folders.some(item => item.id === folder_id)) return text("Pasta não encontrada.");
     const now = Date.now(); const diagram = { id: makeId(), title: title.trim(), folderId: folder_id || null, elements: [], theme: "default", createdAt: now, updatedAt: now };
-    state.diagrams.unshift(diagram); await writeWorkspace(state); return text(diagram);
+    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("create_diagram_from_mermaid", {
     description: "Cria um diagrama VLI a partir do código Mermaid. Fluxogramas são convertidos automaticamente em formas, raias e conectores editáveis na próxima abertura do VLI; outros tipos permanecem renderizados como Mermaid.",
@@ -56,7 +58,7 @@ const handler = createMcpHandler(() => {
     if (folder_id && !state.folders.some(item => item.id === folder_id)) return text("Pasta não encontrada.");
     const now = Date.now(); const id = makeId();
     const diagram = { id, title: title.trim(), folderId: folder_id || null, elements: [{ id: makeId(), type: "mermaid", title: title.trim(), code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }], sourceMermaid: mermaid, createdAt: now, updatedAt: now };
-    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, message: "Diagrama salvo no VLI." });
+    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, url: diagramUrl(id), message: "Diagrama salvo no VLI." });
   });
   server.registerTool("update_diagram_from_mermaid", {
     description: "Atualiza o código Mermaid de um diagrama VLI e o deixa renderizado como conteúdo principal do quadro.",
@@ -65,13 +67,13 @@ const handler = createMcpHandler(() => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
     if (!diagram) return text("Diagrama não encontrado.");
     diagram.title = title?.trim() || diagram.title; diagram.elements = [{ id: makeId(), type: "mermaid", title: diagram.title, code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }]; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
-    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, message: "Código Mermaid atualizado." });
+    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Código Mermaid atualizado." });
   });
   server.registerTool("rename_diagram", {
     description: "Renomeia um diagrama pelo ID.", inputSchema: z.object({ diagram_id: z.string(), title: z.string().min(1).max(160) })
   }, async ({ diagram_id, title }) => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
-    if (!diagram) return text("Diagrama não encontrado."); diagram.title = title.trim(); diagram.updatedAt = Date.now(); await writeWorkspace(state); return text(diagram);
+    if (!diagram) return text("Diagrama não encontrado."); diagram.title = title.trim(); diagram.updatedAt = Date.now(); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("move_diagram", {
     description: "Move um diagrama para uma pasta, ou para Sem pasta se folder_id for nulo.", inputSchema: z.object({ diagram_id: z.string(), folder_id: z.string().nullable() })
@@ -79,7 +81,7 @@ const handler = createMcpHandler(() => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
     if (!diagram) return text("Diagrama não encontrado.");
     if (folder_id && !state.folders.some(item => item.id === folder_id)) return text("Pasta não encontrada.");
-    diagram.folderId = folder_id; diagram.updatedAt = Date.now(); await writeWorkspace(state); return text(diagram);
+    diagram.folderId = folder_id; diagram.updatedAt = Date.now(); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("delete_diagram", {
     description: "Exclui um diagrama pelo ID.", inputSchema: z.object({ diagram_id: z.string() })
@@ -88,9 +90,10 @@ const handler = createMcpHandler(() => {
     if (state.diagrams.length === before) return text("Diagrama não encontrado."); await writeWorkspace(state); return text("Diagrama excluído.");
   });
   return server;
-}, { responseMode: "json" });
+  }, { responseMode: "json" });
+}
 
 export default { async fetch(request) {
   if (!validBearer(request)) return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
-  return handler.fetch(request, { authInfo: { token: "vli-mcp-token", clientId: "notion-agent", scopes: [] } });
+  return makeHandler(new URL(request.url).origin).fetch(request, { authInfo: { token: "vli-mcp-token", clientId: "notion-agent", scopes: [] } });
 } };
