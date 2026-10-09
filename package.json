@@ -1,0 +1,11 @@
+{
+  "name": "vli-diagrams",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@modelcontextprotocol/server": "^2.1.0",
+    "zod": "^4.1.0"
+  }
+}

@@ -15,7 +15,10 @@ const flowNodeTypes = [
   { type:"subprocess", label:"Subprocesso", symbol:"▣", width:180, height:105 }
 ];
 const initialState = { folders: [], diagrams: [], activeDiagramId: null };
-let state = readState();
+let state = structuredClone(initialState);
+let workspaceReady = false;
+let saveTimer = null;
+let saveInProgress = false;
 let mermaidPromise;
 let mermaidQueue = Promise.resolve();
 let selectedElement = null;
@@ -34,7 +37,62 @@ function readState() {
   try { return { ...initialState, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") }; }
   catch { return structuredClone(initialState); }
 }
-function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function persist() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveWorkspace, 350);
+}
+async function saveWorkspace() {
+  if (saveInProgress) return;
+  saveInProgress = true;
+  const status = document.getElementById("saveStatus");
+  if (status) status.innerHTML = "<i></i> Salvando…";
+  try {
+    let savedSnapshot = "";
+    do {
+      const snapshot = JSON.stringify(state);
+      const response = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: snapshot });
+      if (response.status === 401) { showLogin(); return; }
+      if (!response.ok) throw new Error("Falha ao salvar no Turso");
+      savedSnapshot = snapshot;
+    } while (savedSnapshot !== JSON.stringify(state));
+    if (status?.isConnected) status.innerHTML = "<i></i> Salvo no Turso";
+  } catch (error) {
+    console.error(error);
+    if (status?.isConnected) status.innerHTML = "<i></i> Erro ao salvar";
+  } finally { saveInProgress = false; }
+}
+function showLogin(message = "Entre com a chave de acesso configurada na Vercel para abrir seu espaço.") {
+  workspaceReady = false;
+  app.innerHTML = `<main class="login-screen"><form class="login-card" id="loginForm"><div class="brand-mark">V</div><p class="eyebrow">VLI DIAGRAMS</p><h1>Seu espaço privado</h1><p>${escapeHtml(message)}</p><label class="field-label" for="accessToken">Chave de acesso</label><input class="text-input" id="accessToken" type="password" autocomplete="current-password" required placeholder="VLI_MCP_TOKEN"/><button class="button primary" type="submit">Entrar</button><div class="login-error" id="loginError" role="alert"></div></form></main>`;
+  document.getElementById("loginForm").addEventListener("submit", async event => {
+    event.preventDefault(); const button = event.currentTarget.querySelector("button[type=submit]"); button.disabled = true; button.textContent = "Conectando…";
+    try {
+      const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: document.getElementById("accessToken").value }) });
+      if (!response.ok) throw new Error("A chave não foi aceita. Confira o valor de VLI_MCP_TOKEN na Vercel.");
+      await bootWorkspace();
+    } catch (error) { document.getElementById("loginError").textContent = error.message; button.disabled = false; button.textContent = "Entrar"; }
+  });
+}
+async function bootWorkspace() {
+  app.innerHTML = `<main class="login-screen"><div class="login-card loading-card"><div class="brand-mark">V</div><h1>Conectando ao seu espaço…</h1><p>Carregando diagramas do Turso.</p></div></main>`;
+  try {
+    const response = await fetch("/api/workspace");
+    if (response.status === 401) { showLogin(); return; }
+    if (!response.ok) throw new Error("A API não conseguiu ler o Turso. Confira as variáveis TURSO na Vercel.");
+    const remote = await response.json();
+    const local = readState();
+    if (!remote.diagrams?.length && !remote.folders?.length && (local.diagrams?.length || local.folders?.length)) {
+      const save = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(local) });
+      if (!save.ok) throw new Error("Não foi possível copiar os dados deste navegador para o Turso.");
+      state = local;
+    } else state = { ...initialState, ...remote };
+    workspaceReady = true; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render();
+  } catch (error) {
+    app.innerHTML = `<main class="login-screen"><div class="login-card"><div class="brand-mark">V</div><h1>Não consegui carregar o espaço</h1><p>${escapeHtml(error.message)}</p><button class="button primary" id="retryWorkspace">Tentar novamente</button></div></main>`;
+    document.getElementById("retryWorkspace").addEventListener("click", bootWorkspace);
+  }
+}
 function id() { return crypto.randomUUID(); }
 function escapeHtml(value = "") { return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function currentDiagram() { return state.diagrams.find(d => d.id === state.activeDiagramId); }
@@ -45,6 +103,7 @@ function itemSummary(d){const items=d.elements.filter(e=>e.type!=="connector").l
 
 function render() {
   if (shareMode) return renderShared();
+  if (!workspaceReady) return;
   const diagram = currentDiagram();
   app.innerHTML = `
     <div class="shell">
@@ -55,7 +114,7 @@ function render() {
           <button class="nav-item ${!diagram && !activeViewFolderId ? "active" : ""}" id="allDiagrams"><span>▦</span> Todos os diagramas <span class="count">${state.diagrams.length}</span></button>
           <div id="folderList">${state.folders.map(f => `<div class="folder-row"><button class="nav-item folder-item ${(activeViewFolderId || activeFolderId()) === f.id ? "active" : ""}" data-folder="${f.id}"><span>▰</span><span class="folder-name">${escapeHtml(f.name)}</span><span class="folder-count">${state.diagrams.filter(d => d.folderId === f.id).length}</span></button><button class="row-more" data-folder-menu="${f.id}" title="Opções da pasta">···</button></div>`).join("")}</div>
         </div>
-        <div class="sidebar-bottom"><div class="profile"><div class="avatar">K</div><div><b>Meu espaço</b><small>Armazenado neste navegador</small></div><button class="icon-button" id="settings" title="Configurações">⚙</button></div></div>
+        <div class="sidebar-bottom"><div class="profile"><div class="avatar">K</div><div><b>Meu espaço</b><small>Sincronizado no Turso</small></div><button class="icon-button" id="settings" title="Configurações">⚙</button></div></div>
       </aside>
       <main class="main">
         ${diagram ? renderEditor(diagram) : renderLibrary()}
@@ -121,7 +180,16 @@ function bindShell() {
     document.querySelectorAll("[data-card]").forEach(card => card.hidden = !card.textContent.toLowerCase().includes(ev.target.value.toLowerCase()));
   });
   document.getElementById("importButton")?.addEventListener("click", () => showMermaidModal(null, { importAsDiagram: true }));
-  document.getElementById("settings")?.addEventListener("click", () => toast("Configurações e Notion chegam em uma etapa futura."));
+  document.getElementById("settings")?.addEventListener("click", showSettings);
+}
+
+function showSettings() {
+  const url = `${location.origin}/api/mcp`;
+  const root = document.getElementById("modalRoot");
+  root.innerHTML = `<div class="modal-backdrop" id="settingsBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h2>Conexão com o Notion</h2><p>Adicione este servidor MCP ao Notion para criar e organizar diagramas por lá.</p></div><button class="icon-button" data-close-settings>×</button></div><label class="field-label">Endereço do servidor MCP<input class="text-input" id="mcpUrl" readonly value="${escapeHtml(url)}" /></label><div class="connection-help"><b>Autenticação</b><p>Escolha Bearer token no Notion e use o valor de <code>VLI_MCP_TOKEN</code> que você guardou na Vercel. O token não é exibido nesta tela.</p><b>O agente pode</b><p>Listar, criar, renomear, mover e excluir pastas e diagramas, além de criar e atualizar diagramas com Mermaid.</p></div><div class="modal-actions"><button class="button secondary" data-close-settings>Fechar</button><button class="button primary" id="copyMcpUrl">Copiar endereço</button></div></section></div>`;
+  root.querySelectorAll("[data-close-settings]").forEach(button => button.addEventListener("click", closeModal));
+  root.querySelector("#settingsBackdrop").addEventListener("click", event => { if (event.target.id === "settingsBackdrop") closeModal(); });
+  root.querySelector("#copyMcpUrl").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); toast("Endereço MCP copiado"); closeModal(); } catch { const input = root.querySelector("#mcpUrl"); input.select(); document.execCommand("copy"); toast("Endereço MCP copiado"); closeModal(); } });
 }
 
 function createDiagram(folderId = null) {
@@ -596,7 +664,7 @@ function fitDiagramToView(d){
 
 function touchDiagram(d) {
   d.updatedAt = Date.now(); persist();
-  const status = document.getElementById("saveStatus"); if (status) { status.innerHTML = "<i></i> Salvando…"; clearTimeout(touchDiagram.timer); touchDiagram.timer = setTimeout(() => { if (status.isConnected) status.innerHTML = "<i></i> Salvo"; }, 450); }
+  const status = document.getElementById("saveStatus"); if (status) status.innerHTML = "<i></i> Salvando…";
   const count = document.querySelector(".bottom-bar span:nth-child(2)"); if (count) count.textContent = itemSummary(d);
 }
 function publish(d) {
@@ -623,4 +691,5 @@ function base64UrlDecode(value) { const normal = value.replaceAll("-", "+").repl
 function toast(message) { const el = document.getElementById("toast"); if (!el) return; el.textContent = message; el.classList.add("show"); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove("show"), 2400); }
 function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
 
-render();
+if (shareMode) render(); else bootWorkspace();
+

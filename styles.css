@@ -677,3 +677,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   padding: 3px 4px;
   transform: translate(-50%, -50%);
 }
+
+.login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 10%,#f1efff,transparent 38%),#f7f8fc}.login-card{width:min(100%,420px);padding:38px;border:1px solid #e4e5ee;border-radius:22px;background:#fff;box-shadow:0 24px 70px #24234712}.login-card .brand-mark{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:#6857dd;color:white;font-size:22px;font-weight:800}.login-card .eyebrow{margin:22px 0 8px;color:#7566d9;font-size:11px;font-weight:800;letter-spacing:.14em}.login-card h1{margin:0;color:#25243a;font-size:26px}.login-card>p:not(.eyebrow){margin:10px 0 24px;color:#73758a;line-height:1.55}.login-card .field-label{display:block;margin-bottom:9px;color:#45465c;font-size:13px;font-weight:700}.login-card .text-input{width:100%;margin-bottom:14px}.login-card .button{width:100%;justify-content:center}.login-error{min-height:20px;margin-top:12px;color:#bd3d52;font-size:13px}.loading-card{text-align:center}.loading-card .brand-mark{margin:0 auto 20px}
+.connection-help{margin:20px 0;padding:16px;border-radius:12px;background:#f7f7fb;color:#55576b;font-size:13px;line-height:1.55}.connection-help p{margin:5px 0 14px}.connection-help p:last-child{margin-bottom:0}.connection-help code{padding:2px 5px;border-radius:4px;background:#eceaf8;color:#574ac0}
+
