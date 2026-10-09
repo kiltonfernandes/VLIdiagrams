@@ -1,29 +1,24 @@
 # VLI Diagrams
 
-Editor pessoal de diagramas e quadros visuais, feito para publicação estática no Vercel.
+Editor pessoal de diagramas e quadros visuais, publicado como aplicação estática no Vercel.
 
-## Recursos nesta primeira versão
+## Recursos
 
-- Pastas e diagramas com criar, renomear, mover e excluir.
-- Quadro com notas adesivas e formas editáveis, arrastáveis e redimensionáveis.
-- Conectores com setas entre itens do quadro.
-- Blocos Mermaid com edição de código e renderização ao vivo.
-- Edição de Mermaid com renderização ao vivo usando a linha 11 do Mermaid.
+- Biblioteca pessoal com pastas e diagramas: criar, renomear, mover e excluir.
+- Editor visual com notas adesivas, formas de processo editáveis e redimensionáveis, conectores com setas e raias horizontais.
+- Raias com nome editável, altura ajustável e organização de etapas por área, equipe ou responsável.
+- Formas para passo, decisão, início/fim, entrada/saída, documento, armazenamento de dados e subprocesso.
+- Botões de adição nas quatro laterais das formas para criar uma etapa conectada automaticamente.
+- Blocos Mermaid com prévia ao vivo e renderização via Mermaid 11+.
 - Zoom, pan, salvamento automático no navegador e link de visualização compartilhável.
-- Interface em português, sem conexão com o Notion nesta etapa.
+- Interface em português com diálogos próprios para ações de biblioteca e do quadro.
 
-## Rodar localmente
+## Executar
 
-Abra `index.html` em um navegador moderno ou rode um servidor estático na pasta do projeto.
+Abra `index.html` em um navegador moderno ou inicie um servidor estático na pasta. O Mermaid 11 é carregado do jsDelivr, então o navegador precisa acessar essa CDN.
 
-O Mermaid é carregado do jsDelivr. A publicação precisa permitir essa requisição externa.
+## Persistência e publicação
 
-## Persistência
+Os rascunhos ficam no `localStorage` do navegador atual. Um link publicado contém um retrato do quadro em modo de leitura dentro do próprio endereço. Qualquer pessoa com o link pode visualizar o conteúdo incluído nele.
 
-Os rascunhos ficam no `localStorage` do navegador atual. O link publicado carrega um retrato somente para leitura do quadro dentro do endereço compartilhado.
-
-## Próximos passos
-
-1. Criar o repositório `vli-diagrams` no GitHub e enviar os arquivos.
-2. Importar o repositório no Vercel e publicar.
-3. Depois, adicionar conexão com o Notion em Configurações.
+A integração com o Notion ainda não está implementada. Ela será planejada como uma etapa posterior, em Configurações.
