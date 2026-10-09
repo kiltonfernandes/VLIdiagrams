@@ -362,8 +362,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .live-dot { width: 6px; height: 6px; }
 
 /* Dialogs, menus and Mermaid editor */
-.modal-backdrop { display: grid; position: fixed; z-index: 15; inset: 0; place-items: center; padding: 20px; background: rgb(28 27 50 / 48%); backdrop-filter: blur(4px); }
-.modal { width: min(900px, 96vw); overflow: hidden; border: 1px solid rgb(255 255 255 / 65%); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-lg); }
+.modal-backdrop { display: grid; position: fixed; z-index: 15; inset: 0; place-items: center; overflow-y: auto; overscroll-behavior: contain; padding: 20px; background: rgb(28 27 50 / 48%); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.modal { width: min(900px, 96vw); max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow: auto; overscroll-behavior: contain; border: 1px solid rgb(255 255 255 / 65%); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-lg); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 19px 22px; border-bottom: 1px solid #efeff4; }
 .modal-head > div { display: flex; align-items: center; gap: 10px; }
 .modal-head h2 { margin: 0; font: 700 15px var(--font-display); letter-spacing: -.25px; }
