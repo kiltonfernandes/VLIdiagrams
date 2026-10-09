@@ -208,7 +208,11 @@ function showMermaidModal(existing = null) {
   }, 280);
   codeInput.addEventListener("input", renderPreview); renderPreview();
   document.getElementById("saveMermaid").onclick = () => {
-    const d = currentDiagram(); if (!d) return;
+    let d = currentDiagram();
+    if (!d) {
+      d = { id: id(), title: document.getElementById("mermaidTitleInput").value.trim() || "Novo diagrama", folderId: null, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
+      state.diagrams.unshift(d); state.activeDiagramId = d.id;
+    }
     const code = codeInput.value.trim(); if (!code) { toast("Escreva o código Mermaid antes de salvar"); return; }
     const blockTitle = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
     if (existing) { const item = d.elements.find(e => e.id === existing.id); if (item) { item.code = code; item.title = blockTitle; } }
@@ -274,7 +278,8 @@ function touchDiagram(d) {
 function publish(d) {
   const payload = base64UrlEncode(JSON.stringify({ title: diagramTitle(d), elements: d.elements }));
   const url = `${location.origin}${location.pathname}#share=${payload}`;
-  navigator.clipboard?.writeText(url).then(() => toast("Link de visualização copiado")).catch(() => prompt("Copie o link de visualização:", url));
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => toast("Link de visualização copiado")).catch(() => prompt("Copie o link de visualização:", url));
+  else prompt("Copie o link de visualização:", url);
 }
 function renderShared() {
   try {
