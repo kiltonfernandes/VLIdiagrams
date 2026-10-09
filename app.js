@@ -107,6 +107,12 @@ async function bootWorkspace() {
       const save = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
       if (!save.ok) throw new Error("O Mermaid foi lido, mas as formas convertidas não puderam ser salvas no Turso.");
     }
+    const requestedDiagramId = new URLSearchParams(location.search).get("diagram");
+    const requestedDiagram = requestedDiagramId && state.diagrams.find(diagram => diagram.id === requestedDiagramId);
+    if (requestedDiagram) {
+      state.activeDiagramId = requestedDiagram.id;
+      activeViewFolderId = requestedDiagram.folderId || null;
+    }
     workspaceReady = true; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render();
   } catch (error) {
     app.innerHTML = `<main class="login-screen"><div class="login-card"><div class="brand-mark">V</div><h1>Não consegui carregar o espaço</h1><p>${escapeHtml(error.message)}</p><button class="button primary" id="retryWorkspace">Tentar novamente</button></div></main>`;
@@ -282,10 +288,16 @@ function openActionMenu(anchor,actions){
   root.querySelector("#actionMenuBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="actionMenuBackdrop")closeModal();});
   menu.querySelectorAll("[data-action-index]").forEach(btn=>btn.addEventListener("click",()=>{const action=actions[Number(btn.dataset.actionIndex)];closeModal();action.run();}));
 }
-function openDiagram(diagramId) { const d=state.diagrams.find(item=>item.id===diagramId);activeViewFolderId=d?.folderId||null;state.activeDiagramId = diagramId; persist(); render(); }
+function setDiagramUrl(diagramId = null) {
+  const url = new URL(location.href);
+  if (diagramId) url.searchParams.set("diagram", diagramId);
+  else url.searchParams.delete("diagram");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+function openDiagram(diagramId) { const d=state.diagrams.find(item=>item.id===diagramId);activeViewFolderId=d?.folderId||null;state.activeDiagramId = diagramId;setDiagramUrl(diagramId);persist();render(); }
 
 function bindEditor(d) {
-  document.getElementById("backToLibrary").addEventListener("click", () => { const folderId=activeViewFolderId||d.folderId;state.activeDiagramId = null; persist();if(folderId)showFolder(folderId);else render(); });
+  document.getElementById("backToLibrary").addEventListener("click", () => { const folderId=activeViewFolderId||d.folderId;state.activeDiagramId = null;setDiagramUrl();persist();if(folderId)showFolder(folderId);else render(); });
   const title = document.getElementById("diagramTitle");
   title.addEventListener("input", () => { d.title = title.value; touchDiagram(d); });
   title.addEventListener("blur", () => { if (!title.value.trim()) title.value = d.title = "Diagrama sem título"; persist(); });
