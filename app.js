@@ -1,3 +1,5 @@
+import { layoutElements, geometryKey, diagramBounds } from "./layout.js";
+
 const STORAGE_KEY = "vli-diagrams-v1";
 const colors = ["#ffe58f", "#ffbdbd", "#c7f2c2", "#c8e4ff", "#e7d1ff", "#ffd8a8"];
 const DEFAULT_THEME_ID="paper";
@@ -26,6 +28,10 @@ let connectMode = false;
 let deleteHandlerBound = false;
 let activeViewFolderId = null;
 let currentScale = 1;
+const MIN_SCALE = 0.02;
+let layoutUndo = null;
+let layoutBusy = false;
+let overviewVisible = false;
 let pan = { x: 0, y: 0 };
 let drag = null;
 let suppressClick = false;
@@ -113,7 +119,9 @@ async function bootWorkspace() {
       state.activeDiagramId = requestedDiagram.id;
       activeViewFolderId = requestedDiagram.folderId || null;
     }
+    overviewVisible = shouldShowOverview(currentDiagram());
     workspaceReady = true; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render();
+    if (currentDiagram()) fitDiagramToView(currentDiagram());
   } catch (error) {
     app.innerHTML = `<main class="login-screen"><div class="login-card"><div class="brand-mark">V</div><h1>Não consegui carregar o espaço</h1><p>${escapeHtml(error.message)}</p><button class="button primary" id="retryWorkspace">Tentar novamente</button></div></main>`;
     document.getElementById("retryWorkspace").addEventListener("click", bootWorkspace);
@@ -176,19 +184,44 @@ function renderEditor(d) {
         <button class="tool wide" id="addLane" title="Adicionar raia de responsabilidade"><span class="tool-lane">▤</span><span>Raia</span></button>
         <button class="tool wide" id="connectItems" title="Conectar dois itens"><span>⤳</span><span>Conectar</span></button>
         <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button><button class="tool wide" id="themeButton" title="Escolher tema do diagrama"><span class="tool-theme">◉</span><span>Tema</span></button>
-        <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn">＋</button><button class="icon-button" id="fitCanvas" title="Ajustar à tela">⛶</button></div>
+        <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut" aria-label="Diminuir zoom">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn" aria-label="Aumentar zoom">＋</button><button class="icon-button" id="fitCanvas" title="Ver diagrama inteiro" aria-label="Ver diagrama inteiro">⛶</button><button class="icon-button" id="readCanvas" title="Ler etapa selecionada ou início" aria-label="Ler etapa selecionada ou início">1:1</button></div>
       </div>
-      <div class="canvas-wrap" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Organize as etapas nas raias e conecte os pontos do processo</div></div>
+      <div class="reading-toolbar"><button class="button secondary ${overviewVisible?"":"active"}" id="fullFlowCanvas" aria-pressed="${!overviewVisible}">Fluxo completo</button><button class="button secondary ${overviewVisible?"active":""}" id="overviewCanvas" aria-pressed="${overviewVisible}" ${d.elements.some(e=>e.type==="lane")?"":"disabled"}>Visão por fases</button><button class="button secondary" id="organizeFlow">Organizar fluxo</button><button class="button secondary" id="undoLayout" ${layoutUndo?.diagramId===d.id?"":"disabled"}>Desfazer organização</button><label>Direção <select id="flowDirection" aria-label="Direção do fluxo"><option value="DOWN" ${d.layoutDirection!=="RIGHT"?"selected":""}>De cima para baixo</option><option value="RIGHT" ${d.layoutDirection==="RIGHT"?"selected":""}>Da esquerda para a direita</option></select></label><label>Foco <select id="focusLane" aria-label="Focar uma fase ou raia"><option value="">Diagrama inteiro</option>${d.elements.filter(e=>e.type==="lane").map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}</select></label></div>
+      <div class="canvas-wrap ${overviewVisible?"overview-mode":""}" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div>${renderPhaseOverview(d)}<div class="canvas-hint" id="canvasHint">Role para mover a tela; Ctrl + rolagem para aproximar</div><button class="diagram-minimap" id="diagramMinimap" aria-label="Minimapa: clique para centralizar uma região"><svg id="minimapSvg" viewBox="0 0 176 112" aria-hidden="true"></svg></button></div>
       <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${itemSummary(d)}</span></div>
     </div>`;
 }
 
 function renderElement(e) {
   if (e.type === "connector") return "";
-  if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>RAIA</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
+  if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>${e.kind==="phase"?"FASE":"RAIA"}</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${e.color};` : ""}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
+}
+function shouldShowOverview(d){return Boolean(d&&d.elements.filter(e=>e.type==="shape").length>25&&d.elements.some(e=>e.type==="lane"));}
+function renderPhaseOverview(d){
+  const lanes=d.elements.filter(e=>e.type==="lane"),nodes=d.elements.filter(e=>e.type==="shape");
+  const byId=new Map(d.elements.map(e=>[e.id,e]));
+  const members=lane=>nodes.filter(e=>e.laneId===lane.id||(!e.laneId&&e.x>=lane.x+176&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height));
+  const cards=lanes.map((lane,index)=>{
+    const steps=members(lane),keys=new Set(steps.map(e=>e.id)),destinations=new Map();
+    for(const line of d.elements.filter(e=>e.type==="connector"&&keys.has(e.from)&&!keys.has(e.to))){
+      const target=byId.get(line.to);if(!target)continue;
+      const targetLane=lanes.find(l=>target.laneId===l.id||(!target.laneId&&members(l).some(e=>e.id===target.id)));
+      const name=targetLane?.name||"Etapas fora dos grupos";
+      destinations.set(name,(destinations.get(name)||0)+1);
+    }
+    return `<article class="phase-summary"><span class="phase-number">${String(index+1).padStart(2,"0")}</span><h3>${escapeHtml(lane.name)}</h3><p>${steps.length} etapas · ${steps.filter(e=>e.shape==="decision").length} ${steps.filter(e=>e.shape==="decision").length===1?"decisão":"decisões"}</p><div class="phase-links">${destinations.size?[...destinations].map(([name,count])=>`<span>Vai para <b>${escapeHtml(name)}</b> · ${count} ${count===1?"conexão":"conexões"}</span>`).join(""):"Sem conexões de saída para outros grupos"}</div><button class="button primary" data-read-phase="${lane.id}">Ler etapas</button></article>`;
+  });
+  const assigned=new Set(lanes.flatMap(l=>members(l).map(e=>e.id))),free=nodes.filter(e=>!assigned.has(e.id));
+  return `<section class="phase-overview" aria-label="Visão geral por fases"><header><div class="eyebrow">VISÃO GERAL</div><h2>${escapeHtml(diagramTitle(d))}</h2><p>${nodes.length} etapas em ${lanes.length} grupos. Escolha um trecho para ler o fluxo.</p></header><div class="phase-summary-grid">${cards.join("")}</div>${free.length?`<p>${free.length} etapas fora dos grupos. <button class="button secondary" data-read-free>Ler essas etapas</button></p>`:""}</section>`;
+}
+function showOverview(value){
+  overviewVisible=value;document.getElementById("canvasWrap")?.classList.toggle("overview-mode",value);
+  for(const [name,active] of [["fullFlowCanvas",!value],["overviewCanvas",value]]){
+    const button=document.getElementById(name);if(button){button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));}
+  }
 }
 
 function bindShell() {
@@ -294,7 +327,7 @@ function setDiagramUrl(diagramId = null) {
   else url.searchParams.delete("diagram");
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 }
-function openDiagram(diagramId) { const d=state.diagrams.find(item=>item.id===diagramId);activeViewFolderId=d?.folderId||null;state.activeDiagramId = diagramId;setDiagramUrl(diagramId);persist();render(); }
+function openDiagram(diagramId) { const d=state.diagrams.find(item=>item.id===diagramId);overviewVisible=shouldShowOverview(d);activeViewFolderId=d?.folderId||null;state.activeDiagramId = diagramId;setDiagramUrl(diagramId);persist();render();if(d)fitDiagramToView(d); }
 
 function bindEditor(d) {
   document.getElementById("backToLibrary").addEventListener("click", () => { const folderId=activeViewFolderId||d.folderId;state.activeDiagramId = null;setDiagramUrl();persist();if(folderId)showFolder(folderId);else render(); });
@@ -316,7 +349,20 @@ function bindEditor(d) {
   document.getElementById("diagramMenu").addEventListener("click", () => diagramMenu(d.id));
   document.getElementById("zoomIn").addEventListener("click", () => zoom(1.12));
   document.getElementById("zoomOut").addEventListener("click", () => zoom(1 / 1.12));
-  document.getElementById("fitCanvas").addEventListener("click", resetView);
+  document.getElementById("fitCanvas").addEventListener("click", () => {showOverview(false);fitDiagramToView(d);});
+  document.getElementById("fullFlowCanvas").addEventListener("click",()=>{showOverview(false);fitDiagramToView(d);});
+  document.getElementById("overviewCanvas").addEventListener("click", () => showOverview(true));
+  document.querySelectorAll("[data-read-phase]").forEach(button=>button.addEventListener("click",()=>{document.getElementById("focusLane").value=button.dataset.readPhase;selectedElement=null;readDiagram(d);}));
+  document.querySelector("[data-read-free]")?.addEventListener("click",()=>{selectedElement=d.elements.find(e=>e.type==="shape"&&!e.laneId)?.id;document.getElementById("focusLane").value="";readDiagram(d);});
+  document.getElementById("readCanvas").addEventListener("click", () => readDiagram(d));
+  document.getElementById("organizeFlow").addEventListener("click", () => organizeDiagram(d));
+  document.getElementById("undoLayout").addEventListener("click", () => undoOrganization(d));
+  document.getElementById("focusLane").addEventListener("change", event => {
+    showOverview(false);
+    const lane = d.elements.find(e => e.id === event.target.value && e.type === "lane");
+    if (lane) fitDiagramToView({ elements: [lane] }); else fitDiagramToView(d);
+  });
+  document.getElementById("diagramMinimap").addEventListener("click", event => moveFromMinimap(event, d));
   document.querySelectorAll("[data-tool]").forEach(btn => btn.addEventListener("click", () => {
     document.querySelectorAll("[data-tool]").forEach(t => t.classList.toggle("active", t === btn));
     document.getElementById("canvasWrap").classList.toggle("pan-mode", btn.dataset.tool === "pan");
@@ -343,7 +389,15 @@ function bindEditor(d) {
     });
   });
   const wrap = document.getElementById("canvasWrap");
-  wrap.addEventListener("wheel", ev => { ev.preventDefault(); zoom(ev.deltaY < 0 ? 1.08 : 1 / 1.08, { x: ev.clientX, y: ev.clientY }); }, { passive: false });
+  wrap.addEventListener("wheel", ev => {
+    if(overviewVisible)return;
+    if(ev.target.closest(".diagram-minimap"))return;
+    ev.preventDefault();
+    if(ev.ctrlKey||ev.metaKey){zoom(ev.deltaY < 0 ? 1.08 : 1 / 1.08, { x: ev.clientX, y: ev.clientY });return;}
+    const unit=ev.deltaMode===1?18:ev.deltaMode===2?wrap.clientHeight:1;
+    pan.x-=(ev.shiftKey?ev.deltaY:ev.deltaX)*unit;
+    pan.y-=(ev.shiftKey?0:ev.deltaY)*unit;applyTransform();
+  }, { passive: false });
   wrap.addEventListener("pointerdown", ev => {
     if (!wrap.classList.contains("pan-mode") || ev.target.closest("button")) return;
     ev.preventDefault();
@@ -410,7 +464,9 @@ function laneMenu(d,laneId,anchor){
 function startLaneResize(ev,d,laneId){
   ev.preventDefault();ev.stopPropagation();const lane=d.elements.find(e=>e.type==="lane"&&e.id===laneId),node=document.querySelector(`[data-lane="${laneId}"]`);if(!lane||!node)return;
   const start={y:ev.clientY,height:lane.height};
-  const onMove=moveEv=>{lane.height=Math.max(150,start.height+(moveEv.clientY-start.y)/currentScale);node.style.height=`${lane.height}px`;};
+  const children=d.elements.filter(e=>e.laneId===laneId);
+  const minHeight=Math.max(150,...children.map(e=>e.y+(e.height||105)-lane.y+36));
+  const onMove=moveEv=>{lane.height=Math.max(minHeight,start.height+(moveEv.clientY-start.y)/currentScale);node.style.height=`${lane.height}px`;updateMinimap(d);};
   const onUp=()=>{window.removeEventListener("pointermove",onMove);touchDiagram(d);};window.addEventListener("pointermove",onMove);window.addEventListener("pointerup",onUp,{once:true});
 }
 function showNodeChoices(d,fromId,side,anchor){
@@ -457,7 +513,7 @@ function showMermaidModal(existing = null, options = {}) {
         const elements = await convertMermaidFlowchart(code);
         const title = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
         const d = { id:id(), title, folderId:null, themeId:DEFAULT_THEME_ID, elements, sourceMermaid:code, createdAt:Date.now(), updatedAt:Date.now() };
-        state.diagrams.unshift(d); state.activeDiagramId=d.id; persist(); close(); render(); fitDiagramToView(d); toast("Fluxograma convertido em itens editáveis");
+        state.diagrams.unshift(d); state.activeDiagramId=d.id; overviewVisible=shouldShowOverview(d); persist(); close(); render(); fitDiagramToView(d); toast("Fluxograma convertido em itens editáveis");
       } catch (error) {
         saveButton.disabled = false; saveButton.textContent = "Criar diagrama editável";
         status.textContent = error.message || "Não foi possível converter este fluxograma.";
@@ -508,7 +564,7 @@ function startDrag(ev, d, el) {
     item.x = drag.startX + (moveEv.clientX - drag.x) / currentScale; item.y = drag.startY + (moveEv.clientY - drag.y) / currentScale;
     node.style.left = item.x + "px"; node.style.top = item.y + "px"; suppressClick = true; drawConnections(d);
   };
-  const onUp = () => { if (drag?.type === "element") { drag = null; touchDiagram(d); setTimeout(() => suppressClick = false, 10); } window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  const onUp = () => { if (drag?.type === "element") { const item=d.elements.find(e=>e.id===drag.id); if(item?.type==="shape")updateLaneMembership(d,item); drag = null; touchDiagram(d); setTimeout(() => suppressClick = false, 10); } window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp, { once: true });
 }
 function startResize(ev, d, elementId) {
@@ -519,12 +575,18 @@ function startResize(ev, d, elementId) {
   const onUp = () => { window.removeEventListener("pointermove", onMove); touchDiagram(d); };
   window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp, { once: true });
 }
+function updateLaneMembership(d,item){
+  const cx=item.x+item.width/2,cy=item.y+item.height/2;
+  const lane=d.elements.filter(e=>e.type==="lane"&&cx>=e.x+176&&cx<=e.x+e.width&&cy>=e.y&&cy<=e.y+e.height).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
+  if(lane)item.laneId=lane.id;else delete item.laneId;
+}
 function zoom(factor, point) {
-  const next = Math.min(2.4, Math.max(0.45, currentScale * factor));
+  const next = Math.min(2.4, Math.max(MIN_SCALE, currentScale * factor));
+  if (!point) { const rect = document.getElementById("canvasWrap").getBoundingClientRect(); point = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; }
   if (point) { const rect = document.getElementById("canvasWrap").getBoundingClientRect(); const px = point.x - rect.left, py = point.y - rect.top; pan.x = px - (px - pan.x) * next / currentScale; pan.y = py - (py - pan.y) * next / currentScale; }
   currentScale = next; applyTransform();
 }
-function applyTransform() { const content = document.getElementById("canvasContent"); if (content) content.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${currentScale})`; const label = document.getElementById("zoomLabel"); if (label) label.textContent = `${Math.round(currentScale * 100)}%`; }
+function applyTransform() { const content = document.getElementById("canvasContent"); if (content) content.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${currentScale})`; const label = document.getElementById("zoomLabel"); if (label) label.textContent = `${Math.round(currentScale * 100)}%`; const d = currentDiagram(); if (d) updateMinimap(d); }
 function resetView() { currentScale = 1; pan = { x: 0, y: 0 }; applyTransform(); }
 
 async function renderAllMermaid(d) {
@@ -549,9 +611,24 @@ function connectionPoint(item,side){
   if(side==="left")return{x,y:y+h/2};
   return{x:x+w,y:y+h/2};
 }
-function routeConnection(line,d){
+function routeConnection(line,d,key=geometryKey(d.elements)){
   const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);
   if(!a||!b)return null;
+  if (line.route?.key === key && line.route.points?.length > 1) {
+    const pts = line.route.points.map(p => ({...p}));
+    // Attach the saved orthogonal route to the visible decision diamond.
+    for (const item of [a,b]) {
+      if (item.shape !== "decision") continue;
+      const at=item===a?0:pts.length-1,next=item===a?1:pts.length-2;
+      const p=pts[at],q=pts[next],vertical=Math.abs(p.x-q.x)<.5;
+      const side=vertical?(p.y<item.y+item.height/2?"top":"bottom"):(p.x<item.x+item.width/2?"left":"right");
+      const tip=connectionPoint(item,side);
+      const elbow=vertical?{x:tip.x,y:p.y}:{x:p.x,y:tip.y};
+      if(at===0)pts.splice(0,1,tip,elbow,p);else pts.splice(pts.length-1,1,p,elbow,tip);
+    }
+    const midpoint=pts[Math.floor(pts.length/2)];
+    return {dPath:pts.map((p,i)=>`${i?"L":"M"} ${p.x} ${p.y}`).join(" "),label:line.route.label||{...midpoint,anchor:"middle"}};
+  }
   const center=e=>({x:e.x+(e.width||220)/2,y:e.y+(e.height||190)/2});
   const ca=center(a),cb=center(b),sides=["top","right","bottom","left"];
   const vector={top:{x:0,y:-1},right:{x:1,y:0},bottom:{x:0,y:1},left:{x:-1,y:0}};
@@ -596,12 +673,16 @@ function routeConnection(line,d){
 function drawConnections(d) {
   const svg=document.getElementById("connections");if(!svg)return;
   const lines=d.elements.filter(e=>e.type==="connector");
+  const key=geometryKey(d.elements);
+  const bounds=diagramBounds(d.elements);
+  if(bounds){svg.setAttribute("width",Math.max(5000,bounds.right+100));svg.setAttribute("height",Math.max(5000,bounds.bottom+100));}
   svg.innerHTML=`<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" style="fill:var(--diagram-connector,#63748b)" /></marker></defs>`+lines.map(line=>{
-    const route=routeConnection(line,d);if(!route)return "";
+    const route=routeConnection(line,d,key);if(!route)return "";
     const style=line.stroke==="dotted"?'stroke-dasharray="5 5"':line.stroke==="thick"?'stroke-width="3"':"";
     return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="${route.dPath}" marker-end="url(#arrowhead)" ${style}/>${line.text?`<text class="connector-label" x="${route.label.x}" y="${route.label.y}" text-anchor="${route.label.anchor}">${escapeHtml(line.text)}</text>`:""}`;
   }).join("");
   svg.querySelectorAll("[data-connector]").forEach(path=>path.addEventListener("click",ev=>{ev.stopPropagation();selectedElement=path.dataset.connector;drawConnections(d);}));
+  if(currentDiagram()?.id===d.id)updateMinimap(d);
 }
 async function getMermaid() {
   if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "linear", htmlLabels: true } }); return module.default; });
@@ -630,49 +711,32 @@ async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
   });
   const {vertices,edges,groups,direction}=graph;
   if(!vertices.length)throw new Error("Não encontrei etapas neste fluxograma.");
-  const byId=new Map(vertices.map(v=>[String(v.id),v]));
-  const validEdges=edges.filter(e=>byId.has(String(e.start))&&byId.has(String(e.end)));
-  const ranks=new Map(vertices.map(v=>[String(v.id),0])),incoming=new Map(vertices.map(v=>[String(v.id),0])),outgoing=new Map(vertices.map(v=>[String(v.id),[]]));
-  for(const edge of validEdges){incoming.set(String(edge.end),(incoming.get(String(edge.end))||0)+1);outgoing.get(String(edge.start))?.push(String(edge.end));}
-  const queue=vertices.map(v=>String(v.id)).filter(key=>incoming.get(key)===0);
-  for(let i=0;i<queue.length;i++){const from=queue[i];for(const to of outgoing.get(from)||[]){ranks.set(to,Math.max(ranks.get(to)||0,(ranks.get(from)||0)+1));incoming.set(to,incoming.get(to)-1);if(incoming.get(to)===0)queue.push(to);}}
-  const maxRank=Math.max(0,...ranks.values());
-  const laneGroups=[];const assigned=new Set();
-  for(const group of groups||[]){
-    const members=(group.nodes||[]).map(String).filter(key=>byId.has(key)&&!assigned.has(key));
-    if(!members.length)continue;
-    members.forEach(key=>assigned.add(key));laneGroups.push({id:String(group.id||id()),name:String(group.title||group.id||"Raia"),members});
+  const byKey=new Map(),elements=[],assigned=new Set();
+  for(const vertex of vertices){
+    const key=String(vertex.id),shape=mermaidShape(vertex.type),preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
+    const text=plainMermaidLabel(vertex.text||key);
+    const lines=Math.ceil(text.length/Math.max(12,Math.floor((preset.width-24)/7)));
+    const item={id:id(),type:"shape",shape,text,colorMode:"theme",sourceId:key,x:0,y:0,width:preset.width,height:Math.max(preset.height,lines*20+40)};
+    byKey.set(key,item);elements.push(item);
   }
-  const ungrouped=vertices.map(v=>String(v.id)).filter(key=>!assigned.has(key));
-  const elementByKey=new Map();let elements=[];const shapeCount={};
-  const makeNode=(key,x,y)=>{
-    const vertex=byId.get(key),shape=mermaidShape(vertex.type),preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
-    const label=plainMermaidLabel(vertex.text||key),width=preset.width,height=preset.height,nodeId=id();
-    shapeCount[shape]=(shapeCount[shape]||0)+1;
-    const item={id:nodeId,type:"shape",shape,text:label,colorMode:"theme",x,y,width,height};
-    elementByKey.set(key,item);elements.push(item);return item;
-  };
-  let freeNodesTop=90;
-  if(laneGroups.length){
-    const laneX=60,laneWidth=Math.max(760,(maxRank+1)*255+230);let laneY=70;
-    for(const group of laneGroups){
-      const members=group.members.slice().sort((a,b)=>(ranks.get(a)-ranks.get(b))||a.localeCompare(b));
-      const layerCounts=new Map();members.forEach(key=>layerCounts.set(ranks.get(key),(layerCounts.get(ranks.get(key))||0)+1));
-      const laneHeight=Math.max(230,...[...layerCounts.values()].map(count=>count*150+90));
-      elements.push({id:id(),type:"lane",name:group.name,x:laneX,y:laneY,width:laneWidth,height:laneHeight});
-      const layerIndexes=new Map();
-      for(const key of members){const rank=ranks.get(key)||0,index=layerIndexes.get(rank)||0;layerIndexes.set(rank,index+1);const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];const count=layerCounts.get(rank)||1;const rowY=laneY+(laneHeight-(count*preset.height+(count-1)*18))/2+index*(preset.height+18);makeNode(key,laneX+185+rank*255,rowY);}
-      laneY+=laneHeight+14;
-    }
-    freeNodesTop=laneY+20;
+  // Resolve membership from inner groups, then retain the source group order.
+  const membership=new Map();
+  for(const group of [...groups].sort((a,b)=>a.nodes.length-b.nodes.length)){
+    const members=group.nodes.map(String).filter(key=>byKey.has(key)&&!assigned.has(key));
+    membership.set(group,members);members.forEach(key=>assigned.add(key));
   }
-  if(ungrouped.length){
-    const remaining=ungrouped.slice().sort((a,b)=>(ranks.get(a)-ranks.get(b))||a.localeCompare(b)),layers=new Map();
-    for(const key of remaining){const rank=ranks.get(key)||0;if(!layers.has(rank))layers.set(rank,[]);layers.get(rank).push(key);}
-    for(const [rank,keys] of layers){keys.forEach((key,index)=>{const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];if(direction==="LR"||direction==="RL"){const col=direction==="RL"?maxRank-rank:rank;makeNode(key,100+col*280,freeNodesTop+index*175);}else{const row=direction==="BT"?maxRank-rank:rank;makeNode(key,120+index*235,freeNodesTop+row*205);}});}
+  for(const group of groups){
+    const members=membership.get(group);if(!members.length)continue;
+    const lane={id:id(),type:"lane",name:plainMermaidLabel(group.title||group.id||"Raia"),x:0,y:0,width:760,height:230};
+    elements.push(lane);
+    for(const key of members)byKey.get(key).laneId=lane.id;
   }
-  for(const edge of validEdges){const from=elementByKey.get(String(edge.start)),to=elementByKey.get(String(edge.end));if(from&&to)elements.push({id:id(),type:"connector",from:from.id,to:to.id,text:plainMermaidLabel(edge.text||""),stroke:edge.stroke});}
-  elements.forEach(element=>{if(element.type!=="connector"){element.x+=offset.x;element.y+=offset.y;}});return elements;
+  for(const edge of edges){
+    const from=byKey.get(String(edge.start)),to=byKey.get(String(edge.end));
+    if(from&&to)elements.push({id:id(),type:"connector",from:from.id,to:to.id,text:plainMermaidLabel(edge.text||""),stroke:edge.stroke});
+  }
+  const layoutDirection=({LR:"RIGHT",RL:"LEFT",BT:"UP"})[direction]||"DOWN";
+  return layoutElements(elements,layoutDirection,undefined,{x:60+offset.x,y:70+offset.y});
 }
 function convertMermaidCard(d,elementId){
   const card=d.elements.find(e=>e.id===elementId&&e.type==="mermaid");if(!card)return;
@@ -695,7 +759,67 @@ function plainMermaidLabel(value){
   const box=document.createElement("textarea");box.innerHTML=String(value).replaceAll("<br>"," ").replaceAll("<br/>"," ").replaceAll("<br />"," ").replace(/<[^>]*>/g,"");return box.value.trim();
 }
 function fitDiagramToView(d){
-  requestAnimationFrame(()=>{const wrap=document.getElementById("canvasWrap");if(!wrap)return;const items=d.elements.filter(e=>e.type!=="connector");if(!items.length)return;const left=Math.min(...items.map(e=>e.x)),top=Math.min(...items.map(e=>e.y)),right=Math.max(...items.map(e=>e.x+(e.width||180))),bottom=Math.max(...items.map(e=>e.y+(e.height||105))),width=right-left,height=bottom-top;currentScale=Math.max(.45,Math.min(1.15,(wrap.clientWidth-72)/width,(wrap.clientHeight-72)/height));pan.x=(wrap.clientWidth-width*currentScale)/2-left*currentScale;pan.y=(wrap.clientHeight-height*currentScale)/2-top*currentScale;applyTransform();});
+  requestAnimationFrame(()=>{
+    const wrap=document.getElementById("canvasWrap"),bounds=diagramBounds(d.elements);
+    if(!wrap||!bounds)return;
+    currentScale=Math.max(MIN_SCALE,Math.min(1.15,(wrap.clientWidth-64)/bounds.width,(wrap.clientHeight-64)/bounds.height));
+    pan.x=(wrap.clientWidth-bounds.width*currentScale)/2-bounds.left*currentScale;
+    pan.y=(wrap.clientHeight-bounds.height*currentScale)/2-bounds.top*currentScale;
+    applyTransform();
+  });
+}
+function readDiagram(d){
+  showOverview(false);
+  const focus=document.getElementById("focusLane")?.value;
+  const nodes=d.elements.filter(e=>e.type!=="connector"&&e.type!=="lane");
+  const lane=d.elements.find(e=>e.id===focus&&e.type==="lane");
+  const inLane=e=>e.laneId===focus||(lane&&e.x>=lane.x+176&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height);
+  const item=nodes.find(e=>e.id===selectedElement)||nodes.filter(e=>!lane||inLane(e)).sort((a,b)=>a.y-b.y||a.x-b.x)[0];
+  const wrap=document.getElementById("canvasWrap");if(!item||!wrap)return;
+  currentScale=Math.min(1,(wrap.clientWidth-64)/(item.width||180),(wrap.clientHeight-64)/(item.height||105));
+  currentScale=Math.max(MIN_SCALE,currentScale);
+  pan.x=wrap.clientWidth/2-(item.x+(item.width||180)/2)*currentScale;
+  pan.y=wrap.clientHeight/2-(item.y+(item.height||105)/2)*currentScale;applyTransform();
+}
+function minimapProjection(d){
+  const bounds=diagramBounds(d.elements);if(!bounds)return null;
+  const scale=Math.min(160/bounds.width,96/bounds.height);
+  return {bounds,scale,x:(176-bounds.width*scale)/2-bounds.left*scale,y:(112-bounds.height*scale)/2-bounds.top*scale};
+}
+function updateMinimap(d){
+  const svg=document.getElementById("minimapSvg"),wrap=document.getElementById("canvasWrap"),map=minimapProjection(d);
+  if(!svg||!wrap||!map)return;
+  const {scale,x,y}=map;
+  svg.innerHTML=d.elements.filter(e=>e.type!=="connector").map(e=>`<rect x="${x+e.x*scale}" y="${y+e.y*scale}" width="${Math.max(1,(e.width||180)*scale)}" height="${Math.max(1,(e.height||105)*scale)}" rx="1" class="${e.type==="lane"?"minimap-lane":"minimap-node"}"/>`).join("")+`<rect class="minimap-viewport" x="${x-pan.x/currentScale*scale}" y="${y-pan.y/currentScale*scale}" width="${wrap.clientWidth/currentScale*scale}" height="${wrap.clientHeight/currentScale*scale}"/>`;
+}
+function moveFromMinimap(event,d){
+  if(event.detail===0){readDiagram(d);return;}
+  const map=minimapProjection(d),wrap=document.getElementById("canvasWrap");if(!map||!wrap)return;
+  const rect=document.getElementById("minimapSvg").getBoundingClientRect();
+  const x=(event.clientX-rect.left)*176/rect.width,y=(event.clientY-rect.top)*112/rect.height;
+  pan.x=wrap.clientWidth/2-(x-map.x)/map.scale*currentScale;
+  pan.y=wrap.clientHeight/2-(y-map.y)/map.scale*currentScale;applyTransform();
+}
+async function organizeDiagram(d){
+  if(layoutBusy)return;
+  layoutBusy=true;const button=document.getElementById("organizeFlow");button.disabled=true;button.textContent="Organizando…";
+  const before=JSON.stringify(d.elements),direction=document.getElementById("flowDirection").value;
+  try{
+    const elements=await layoutElements(d.elements,direction);
+    if(!state.diagrams.includes(d)||JSON.stringify(d.elements)!==before){toast("O quadro mudou durante a organização. Tente novamente.");return;}
+    layoutUndo={diagramId:d.id,direction:d.layoutDirection,elements:JSON.parse(before)};
+    d.elements=elements;d.layoutDirection=direction;touchDiagram(d);render();fitDiagramToView(d);toast("Fluxo organizado. Use 1:1 para ler as etapas.");
+  }catch(error){console.error(error);toast("Não foi possível organizar o fluxo. Confira sua conexão e tente novamente.");}
+  finally{layoutBusy=false;if(button.isConnected){button.disabled=false;button.textContent="Organizar fluxo";}}
+}
+function undoOrganization(d){
+  if(layoutUndo?.diagramId!==d.id)return;
+  const originals=new Map(layoutUndo.elements.map(e=>[e.id,e]));
+  for(const item of d.elements){
+    const original=originals.get(item.id);if(!original)continue;
+    for(const key of ["x","y","width","height","laneId","route"]){if(key in original)item[key]=structuredClone(original[key]);else delete item[key];}
+  }
+  d.layoutDirection=layoutUndo.direction;layoutUndo=null;touchDiagram(d);render();fitDiagramToView(d);toast("Organização desfeita");
 }
 
 function touchDiagram(d) {
@@ -728,4 +852,5 @@ function toast(message) { const el = document.getElementById("toast"); if (!el) 
 function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
 
 if (shareMode) render(); else bootWorkspace();
+
 
