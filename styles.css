@@ -618,3 +618,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 720px) {
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
 }
+
+/* Keep quick-add controls available on hover or focus without covering every node */
+.node-port {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.82);
+}
+.shape-card:hover .node-port,
+.shape-card:focus-within .node-port,
+.shape-card.selected .node-port {
+  opacity: .96;
+  pointer-events: auto;
+  transform: scale(1);
+}
+@media (hover: none) {
+  .node-port { opacity: .94; pointer-events: auto; transform: none; }
+}
