@@ -1,11 +1,21 @@
 const STORAGE_KEY = "vli-diagrams-v1";
 const colors = ["#ffe58f", "#ffbdbd", "#c7f2c2", "#c8e4ff", "#e7d1ff", "#ffd8a8"];
+const flowNodeTypes = [
+  { type:"process", label:"Novo passo", symbol:"▭", width:180, height:105 },
+  { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:125 },
+  { type:"terminator", label:"Início / fim", symbol:"⬭", width:170, height:78 },
+  { type:"io", label:"Entrada / saída", symbol:"▱", width:180, height:95 },
+  { type:"document", label:"Documento", symbol:"▤", width:170, height:100 },
+  { type:"database", label:"Dados / armazenamento", symbol:"▤", width:160, height:100 },
+  { type:"subprocess", label:"Subprocesso", symbol:"▣", width:180, height:105 }
+];
 const initialState = { folders: [], diagrams: [], activeDiagramId: null };
 let state = readState();
 let mermaidPromise;
 let selectedElement = null;
 let connectMode = false;
 let deleteHandlerBound = false;
+let activeViewFolderId = null;
 let currentScale = 1;
 let pan = { x: 0, y: 0 };
 let drag = null;
@@ -25,6 +35,7 @@ function currentDiagram() { return state.diagrams.find(d => d.id === state.activ
 function activeFolderId() { return currentDiagram()?.folderId || null; }
 function diagramTitle(d) { return d?.title || "Diagrama sem título"; }
 function formatDate(value) { return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(new Date(value)); }
+function itemSummary(d){const items=d.elements.filter(e=>e.type!=="connector").length,lanes=d.elements.filter(e=>e.type==="lane").length;return `${items} itens${lanes?` · ${lanes} raias`:""} no quadro`;}
 
 function render() {
   if (shareMode) return renderShared();
@@ -35,8 +46,8 @@ function render() {
         <div class="brand"><div class="brand-mark">V</div><div><strong>VLI Diagrams</strong><small>Quadros e diagramas</small></div></div>
         <button class="new-diagram" id="newDiagram"><span>＋</span> Novo diagrama</button>
         <div class="nav-section"><div class="nav-label">ESPAÇO DE TRABALHO <button class="icon-button tiny" id="newFolder" title="Criar pasta">＋</button></div>
-          <button class="nav-item ${!diagram ? "active" : ""}" id="allDiagrams"><span>▦</span> Todos os diagramas <span class="count">${state.diagrams.length}</span></button>
-          <div id="folderList">${state.folders.map(f => `<div class="folder-row"><button class="nav-item folder-item ${activeFolderId() === f.id ? "active" : ""}" data-folder="${f.id}"><span>▰</span><span class="folder-name">${escapeHtml(f.name)}</span><span class="folder-count">${state.diagrams.filter(d => d.folderId === f.id).length}</span></button><button class="row-more" data-folder-menu="${f.id}" title="Opções da pasta">···</button></div>`).join("")}</div>
+          <button class="nav-item ${!diagram && !activeViewFolderId ? "active" : ""}" id="allDiagrams"><span>▦</span> Todos os diagramas <span class="count">${state.diagrams.length}</span></button>
+          <div id="folderList">${state.folders.map(f => `<div class="folder-row"><button class="nav-item folder-item ${(activeViewFolderId || activeFolderId()) === f.id ? "active" : ""}" data-folder="${f.id}"><span>▰</span><span class="folder-name">${escapeHtml(f.name)}</span><span class="folder-count">${state.diagrams.filter(d => d.folderId === f.id).length}</span></button><button class="row-more" data-folder-menu="${f.id}" title="Opções da pasta">···</button></div>`).join("")}</div>
         </div>
         <div class="sidebar-bottom"><div class="profile"><div class="avatar">K</div><div><b>Meu espaço</b><small>Armazenado neste navegador</small></div><button class="icon-button" id="settings" title="Configurações">⚙</button></div></div>
       </aside>
@@ -70,27 +81,29 @@ function renderEditor(d) {
       <div class="canvas-toolbar">
         <div class="tool-group"><button class="tool active" data-tool="select" title="Selecionar e mover">↖</button><button class="tool" data-tool="pan" title="Mover tela">✥</button></div><div class="tool-divider"></div>
         <button class="tool wide" id="addSticky" title="Adicionar nota adesiva"><span class="tool-sticky">▰</span><span>Nota</span></button>
-        <button class="tool wide" id="addShape" title="Adicionar forma"><span class="tool-shape">◇</span><span>Forma</span></button>
+        <button class="tool wide" id="addShape" title="Escolher forma"><span class="tool-shape">◇</span><span>Forma</span></button>
+        <button class="tool wide" id="addLane" title="Adicionar raia de responsabilidade"><span class="tool-lane">▤</span><span>Raia</span></button>
         <button class="tool wide" id="connectItems" title="Conectar dois itens"><span>⤳</span><span>Conectar</span></button>
         <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button>
         <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn">＋</button><button class="icon-button" id="fitCanvas" title="Ajustar à tela">⛶</button></div>
       </div>
-      <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent"><svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Arraste notas, formas e diagramas para organizar suas ideias</div></div>
-      <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${d.elements.length} itens no quadro</span></div>
+      <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Organize as etapas nas raias e conecte os pontos do processo</div></div>
+      <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${itemSummary(d)}</span></div>
     </div>`;
 }
 
 function renderElement(e) {
   if (e.type === "connector") return "";
+  if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>RAIA</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
-  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "rect")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;background:${e.color || "#d9d3ff"}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;--shape-color:${e.color || "#d9d3ff"}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
 
 function bindShell() {
   ["newDiagram", "newDiagramTop", "emptyNewDiagram"].forEach(idName => document.getElementById(idName)?.addEventListener("click", () => createDiagram()));
   document.getElementById("newFolder")?.addEventListener("click", createFolder);
-  document.getElementById("allDiagrams")?.addEventListener("click", () => { state.activeDiagramId = null; render(); });
+  document.getElementById("allDiagrams")?.addEventListener("click", () => { state.activeDiagramId = null; activeViewFolderId=null; render(); });
   document.querySelectorAll("[data-folder]").forEach(el => el.addEventListener("click", () => showFolder(el.dataset.folder)));
   document.querySelectorAll("[data-folder-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); folderMenu(el.dataset.folderMenu); }));
   document.querySelectorAll("[data-open]").forEach(el => {
@@ -111,13 +124,10 @@ function createDiagram(folderId = null) {
   const input = document.getElementById("diagramTitle"); input?.focus(); input?.select();
 }
 function createFolder() {
-  const name = prompt("Nome da pasta:");
-  if (!name?.trim()) return;
-  const folder = { id: id(), name: name.trim() }; state.folders.push(folder); persist(); render();
-  toast("Pasta criada");
+  showNameDialog({title:"Criar pasta",label:"Nome da pasta",saveLabel:"Criar pasta",onSave:name=>{const folder={id:id(),name};state.folders.push(folder);persist();activeViewFolderId=folder.id;showFolder(folder.id);toast("Pasta criada");}});
 }
 function showFolder(folderId) {
-  state.activeDiagramId = null; render();
+  state.activeDiagramId = null; activeViewFolderId=folderId; render();
   const folder = state.folders.find(f => f.id === folderId);
   const main = document.querySelector(".main");
   const items = state.diagrams.filter(d => d.folderId === folderId);
@@ -130,45 +140,64 @@ function showFolder(folderId) {
   });
   document.querySelectorAll("[data-diagram-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); diagramMenu(el.dataset.diagramMenu); }));
 }
+function refreshLibrary(){if(state.activeDiagramId){render();return;}if(activeViewFolderId){showFolder(activeViewFolderId);return;}render();}
 
 function folderMenu(folderId) {
   const folder = state.folders.find(f => f.id === folderId); if (!folder) return;
-  const action = prompt(`Pasta: ${folder.name}\nDigite: renomear ou excluir`);
-  if (action?.toLowerCase() === "renomear") {
-    const next = prompt("Novo nome:", folder.name); if (next?.trim()) folder.name = next.trim();
-  } else if (action?.toLowerCase() === "excluir") {
-    if (!confirm(`Excluir a pasta “${folder.name}”? Os diagramas irão para Sem pasta.`)) return;
-    state.diagrams.forEach(d => { if (d.folderId === folderId) d.folderId = null; }); state.folders = state.folders.filter(f => f.id !== folderId);
-  } else return;
-  persist(); render(); toast("Pasta atualizada");
+  const anchor=document.querySelector(`[data-folder-menu="${folderId}"]`);
+  openActionMenu(anchor,[
+    {label:"Renomear pasta",icon:"✎",run:()=>showNameDialog({title:"Renomear pasta",label:"Nome da pasta",value:folder.name,saveLabel:"Salvar",onSave:name=>{folder.name=name;persist();refreshLibrary();toast("Pasta renomeada");}})},
+    {label:"Excluir pasta",icon:"⌫",danger:true,run:()=>showConfirmDialog({title:"Excluir esta pasta?",message:"Os diagramas continuarão salvos e irão para Sem pasta.",confirmLabel:"Excluir pasta",onConfirm:()=>{state.diagrams.forEach(d=>{if(d.folderId===folderId)d.folderId=null;});state.folders=state.folders.filter(f=>f.id!==folderId);if(activeViewFolderId===folderId)activeViewFolderId=null;persist();render();toast("Pasta excluída");}})}
+  ]);
 }
 function diagramMenu(diagramId) {
   const d = state.diagrams.find(x => x.id === diagramId); if (!d) return;
-  const action = prompt(`Diagrama: ${diagramTitle(d)}\nDigite: renomear, mover ou excluir`);
-  if (action?.toLowerCase() === "renomear") {
-    const next = prompt("Novo nome:", d.title); if (next?.trim()) d.title = next.trim();
-  } else if (action?.toLowerCase() === "mover") moveDiagramById(d);
-  else if (action?.toLowerCase() === "excluir") {
-    if (!confirm(`Excluir “${diagramTitle(d)}”?`)) return;
-    state.diagrams = state.diagrams.filter(x => x.id !== d.id); if (state.activeDiagramId === d.id) state.activeDiagramId = null;
-  } else return;
-  persist(); render(); toast("Diagrama atualizado");
+  const anchor=document.querySelector(`[data-diagram-menu="${diagramId}"]`)||document.getElementById("diagramMenu");
+  openActionMenu(anchor,[
+    {label:"Renomear diagrama",icon:"✎",run:()=>showNameDialog({title:"Renomear diagrama",label:"Nome do diagrama",value:d.title,saveLabel:"Salvar",onSave:name=>{d.title=name;persist();refreshLibrary();toast("Diagrama renomeado");}})},
+    {label:"Mover para pasta",icon:"▰",run:()=>moveDiagramById(d)},
+    {label:"Excluir diagrama",icon:"⌫",danger:true,run:()=>showConfirmDialog({title:"Excluir este diagrama?",message:`“${diagramTitle(d)}” será removido permanentemente deste navegador.`,confirmLabel:"Excluir diagrama",onConfirm:()=>{state.diagrams=state.diagrams.filter(x=>x.id!==d.id);if(state.activeDiagramId===d.id)state.activeDiagramId=null;persist();refreshLibrary();toast("Diagrama excluído");}})}
+  ]);
 }
 function moveDiagramById(d) {
-  const options = ["Sem pasta", ...state.folders.map(f => f.name)];
-  const selected = prompt(`Mover “${diagramTitle(d)}” para:\n${options.map((x, i) => `${i + 1}. ${x}`).join("\n")}`, "1");
-  const index = Number(selected) - 1;
-  if (Number.isInteger(index) && index >= 0 && index < options.length) d.folderId = index === 0 ? null : state.folders[index - 1].id;
+  const root=document.getElementById("modalRoot");let choice=d.folderId||"";
+  const choices=[{id:"",name:"Sem pasta"},...state.folders.map(f=>({id:f.id,name:f.name}))];
+  root.innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div><h2>Mover diagrama</h2><p>Escolha onde “${escapeHtml(diagramTitle(d))}” ficará guardado.</p></div></div><button class="icon-button" data-close-modal>×</button></div><div class="folder-choice-list">${choices.map(f=>`<button class="folder-choice ${choice===f.id?"selected":""}" data-choice="${f.id}"><span class="choice-icon">▰</span><span>${escapeHtml(f.name)}</span><span class="choice-check">✓</span></button>`).join("")}</div><div class="modal-actions"><button class="button secondary" data-close-modal>Cancelar</button><button class="button primary" id="saveMove">Mover para pasta</button></div></section></div>`;
+  root.querySelectorAll("[data-choice]").forEach(btn=>btn.addEventListener("click",()=>{choice=btn.dataset.choice;root.querySelectorAll("[data-choice]").forEach(x=>x.classList.toggle("selected",x===btn));}));
+  root.querySelectorAll("[data-close-modal]").forEach(btn=>btn.addEventListener("click",closeModal));
+  root.querySelector("#modalBackdrop").addEventListener("click",ev=>{if(ev.target.id==="modalBackdrop")closeModal();});
+  root.querySelector("#saveMove").addEventListener("click",()=>{d.folderId=choice||null;persist();closeModal();if(d.folderId)showFolder(d.folderId);else{activeViewFolderId=null;render();}toast("Diagrama movido");});
 }
-function openDiagram(diagramId) { state.activeDiagramId = diagramId; persist(); render(); }
+function closeModal(){const root=document.getElementById("modalRoot");if(root)root.innerHTML="";}
+function showNameDialog({title,label,value="",saveLabel="Salvar",onSave}){
+  const root=document.getElementById("modalRoot");
+  root.innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div><h2>${title}</h2><p>Use um nome curto e fácil de encontrar.</p></div></div><button class="icon-button" data-close-modal>×</button></div><label class="field-label">${label}<input class="text-input" id="nameInput" maxlength="80" value="${escapeHtml(value)}" placeholder="Digite um nome" /></label><div class="modal-actions"><button class="button secondary" data-close-modal>Cancelar</button><button class="button primary" id="saveName">${saveLabel}</button></div></section></div>`;
+  const input=root.querySelector("#nameInput");root.querySelectorAll("[data-close-modal]").forEach(btn=>btn.addEventListener("click",closeModal));
+  root.querySelector("#modalBackdrop").addEventListener("click",ev=>{if(ev.target.id==="modalBackdrop")closeModal();});
+  const save=()=>{const name=input.value.trim();if(!name){input.classList.add("invalid");input.focus();return;}closeModal();onSave(name);};
+  root.querySelector("#saveName").addEventListener("click",save);input.addEventListener("keydown",ev=>{if(ev.key==="Enter")save();});input.focus();input.select();
+}
+function showConfirmDialog({title,message,confirmLabel="Excluir",onConfirm}){
+  const root=document.getElementById("modalRoot");root.innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div><h2>${title}</h2><p>${message}</p></div></div><button class="icon-button" data-close-modal>×</button></div><div class="modal-actions"><button class="button secondary" data-close-modal>Cancelar</button><button class="button danger-button" id="confirmAction">${confirmLabel}</button></div></section></div>`;
+  root.querySelectorAll("[data-close-modal]").forEach(btn=>btn.addEventListener("click",closeModal));root.querySelector("#modalBackdrop").addEventListener("click",ev=>{if(ev.target.id==="modalBackdrop")closeModal();});root.querySelector("#confirmAction").addEventListener("click",()=>{closeModal();onConfirm();});
+}
+function openActionMenu(anchor,actions){
+  if(!anchor)return;const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();
+  root.innerHTML=`<div class="action-menu-backdrop" id="actionMenuBackdrop"><div class="action-menu" id="actionMenu">${actions.map((a,i)=>`<button class="action-menu-item ${a.danger?"danger":""}" data-action-index="${i}"><span>${a.icon}</span>${a.label}</button>`).join("")}</div></div>`;
+  const menu=root.querySelector("#actionMenu");menu.style.left=`${Math.min(rect.right-menu.offsetWidth,window.innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(rect.bottom+5,window.innerHeight-menu.offsetHeight-8)}px`;
+  root.querySelector("#actionMenuBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="actionMenuBackdrop")closeModal();});
+  menu.querySelectorAll("[data-action-index]").forEach(btn=>btn.addEventListener("click",()=>{const action=actions[Number(btn.dataset.actionIndex)];closeModal();action.run();}));
+}
+function openDiagram(diagramId) { const d=state.diagrams.find(item=>item.id===diagramId);activeViewFolderId=d?.folderId||null;state.activeDiagramId = diagramId; persist(); render(); }
 
 function bindEditor(d) {
-  document.getElementById("backToLibrary").addEventListener("click", () => { state.activeDiagramId = null; persist(); render(); });
+  document.getElementById("backToLibrary").addEventListener("click", () => { const folderId=activeViewFolderId||d.folderId;state.activeDiagramId = null; persist();if(folderId)showFolder(folderId);else render(); });
   const title = document.getElementById("diagramTitle");
   title.addEventListener("input", () => { d.title = title.value; touchDiagram(d); });
   title.addEventListener("blur", () => { if (!title.value.trim()) title.value = d.title = "Diagrama sem título"; persist(); });
   document.getElementById("addSticky").addEventListener("click", () => addSticky(d));
-  document.getElementById("addShape").addEventListener("click", () => addShape(d));
+  document.getElementById("addShape").addEventListener("click", () => showShapePicker(d, document.getElementById("addShape")));
+  document.getElementById("addLane").addEventListener("click", () => addLane(d));
   document.getElementById("connectItems").addEventListener("click", () => {
     connectMode = !connectMode; selectedElement = null;
     document.getElementById("connectItems").classList.toggle("active", connectMode);
@@ -176,7 +205,7 @@ function bindEditor(d) {
   });
   document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal());
   document.getElementById("publishDiagram").addEventListener("click", () => publish(d));
-  document.getElementById("moveDiagram").addEventListener("click", () => { moveDiagramById(d); persist(); render(); });
+  document.getElementById("moveDiagram").addEventListener("click", () => moveDiagramById(d));
   document.getElementById("diagramMenu").addEventListener("click", () => diagramMenu(d.id));
   document.getElementById("zoomIn").addEventListener("click", () => zoom(1.12));
   document.getElementById("zoomOut").addEventListener("click", () => zoom(1 / 1.12));
@@ -188,10 +217,13 @@ function bindEditor(d) {
   document.querySelectorAll(".sticky-text").forEach(input => input.addEventListener("input", () => {
     const el = d.elements.find(e => e.id === input.dataset.text); if (el) el.text = input.value; touchDiagram(d);
   }));
-  document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); deleteElement(d, btn.dataset.delete); }));
-  document.querySelectorAll("[data-color]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); cycleColor(d, btn.dataset.color); }));
+  document.querySelectorAll("[data-delete]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); confirmDeleteElement(d, btn.dataset.delete); }));
+  document.querySelectorAll("[data-color]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); showColorMenu(d,btn.dataset.color,btn); }));
+  document.querySelectorAll("[data-add-node]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); showNodeChoices(d,btn.dataset.addNode,btn.dataset.side,btn); }));
+  document.querySelectorAll("[data-lane-menu]").forEach(btn => btn.addEventListener("click", ev => {ev.stopPropagation();laneMenu(d,btn.dataset.laneMenu,btn);}));
   document.querySelectorAll("[data-edit-mermaid]").forEach(btn => btn.addEventListener("click", () => editMermaid(d, btn.dataset.editMermaid)));
   document.querySelectorAll("[data-resize]").forEach(handle => handle.addEventListener("pointerdown", ev => startResize(ev, d, handle.dataset.resize)));
+  document.querySelectorAll("[data-resize-lane]").forEach(handle => handle.addEventListener("pointerdown", ev => startLaneResize(ev,d,handle.dataset.resizeLane)));
   document.querySelectorAll("[data-element]").forEach(el => {
     el.addEventListener("pointerdown", ev => startDrag(ev, d, el));
     el.addEventListener("click", () => {
@@ -225,9 +257,56 @@ function addSticky(d, x = 100 + Math.random() * 140, y = 100 + Math.random() * 1
   d.elements.push(note); touchDiagram(d); render();
   const textarea = document.querySelector(`[data-text="${note.id}"]`); textarea?.focus();
 }
-function addShape(d, shape = "rect") {
-  const item = { id:id(),type:"shape",shape,text:"Nova forma",color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x:240+Math.random()*120,y:130+Math.random()*120,width:180,height:105 };
+function addShape(d, shape = "process") {
+  const preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
+  const item = { id:id(),type:"shape",shape,text:preset.label,color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x:240+Math.random()*120,y:130+Math.random()*120,width:preset.width,height:preset.height };
   d.elements.push(item); touchDiagram(d); render(); document.querySelector(`[data-text="${item.id}"]`)?.focus();
+}
+function showShapePicker(d,anchor){
+  const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();
+  root.innerHTML=`<div class="node-picker-backdrop" id="shapePickerBackdrop"><section class="node-picker" id="shapePicker"><div class="node-picker-title">FORMAS DE PROCESSO</div>${flowNodeTypes.map(item=>`<button data-shape-type="${item.type}"><span>${item.symbol}</span>${item.label}</button>`).join("")}</section></div>`;
+  const menu=root.querySelector("#shapePicker");menu.style.left=`${Math.min(rect.left,window.innerWidth-250)}px`;menu.style.top=`${Math.min(rect.bottom+7,window.innerHeight-menu.offsetHeight-14)}px`;
+  root.querySelector("#shapePickerBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="shapePickerBackdrop")closeModal();});
+  menu.querySelectorAll("[data-shape-type]").forEach(button=>button.addEventListener("click",()=>{const shape=button.dataset.shapeType;closeModal();addShape(d,shape);}));
+}
+function addLane(d){
+  const number=d.elements.filter(e=>e.type==="lane").length+1;
+  showNameDialog({title:"Adicionar raia",label:"Área, equipe ou responsável",value:`Raia ${number}`,saveLabel:"Adicionar raia",onSave:name=>{
+    const lanes=d.elements.filter(e=>e.type==="lane"),y=lanes.length?Math.max(...lanes.map(l=>l.y+l.height))+16:100;
+    d.elements.push({id:id(),type:"lane",name,x:70,y,width:1800,height:260,color:"#e8e6f8"});touchDiagram(d);render();toast("Raia adicionada");
+  }});
+}
+function laneMenu(d,laneId,anchor){
+  const lane=d.elements.find(e=>e.type==="lane"&&e.id===laneId);if(!lane)return;
+  openActionMenu(anchor,[
+    {label:"Renomear raia",icon:"✎",run:()=>showNameDialog({title:"Renomear raia",label:"Área, equipe ou responsável",value:lane.name,saveLabel:"Salvar",onSave:name=>{lane.name=name;touchDiagram(d);render();}})},
+    {label:"Excluir raia",icon:"⌫",danger:true,run:()=>showConfirmDialog({title:"Excluir esta raia?",message:"Os elementos permanecerão no quadro, nas posições atuais.",confirmLabel:"Excluir raia",onConfirm:()=>{d.elements=d.elements.filter(e=>e.id!==lane.id);touchDiagram(d);render();toast("Raia excluída");}})}
+  ]);
+}
+function startLaneResize(ev,d,laneId){
+  ev.preventDefault();ev.stopPropagation();const lane=d.elements.find(e=>e.type==="lane"&&e.id===laneId),node=document.querySelector(`[data-lane="${laneId}"]`);if(!lane||!node)return;
+  const start={y:ev.clientY,height:lane.height};
+  const onMove=moveEv=>{lane.height=Math.max(150,start.height+(moveEv.clientY-start.y)/currentScale);node.style.height=`${lane.height}px`;};
+  const onUp=()=>{window.removeEventListener("pointermove",onMove);touchDiagram(d);};window.addEventListener("pointermove",onMove);window.addEventListener("pointerup",onUp,{once:true});
+}
+function showNodeChoices(d,fromId,side,anchor){
+  const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();
+  root.innerHTML=`<div class="node-picker-backdrop" id="nodePickerBackdrop"><section class="node-picker" id="nodePicker"><div class="node-picker-title">O que vem depois?</div>${flowNodeTypes.map(item=>`<button data-node-type="${item.type}"><span>${item.symbol}</span>${item.label}</button>`).join("")}</section></div>`;
+  const menu=document.getElementById("nodePicker");
+  menu.style.left=`${Math.min(rect.left,window.innerWidth-250)}px`;
+  menu.style.top=`${Math.min(rect.bottom+7,window.innerHeight-menu.offsetHeight-14)}px`;
+  document.getElementById("nodePickerBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="nodePickerBackdrop")root.innerHTML="";});
+  menu.querySelectorAll("[data-node-type]").forEach(button=>button.addEventListener("click",()=>{addConnectedNode(d,fromId,side,button.dataset.nodeType);root.innerHTML="";}));
+}
+function addConnectedNode(d,fromId,side,type){
+  const source=d.elements.find(e=>e.id===fromId);if(!source)return;
+  const preset=flowNodeTypes.find(item=>item.type===type)||flowNodeTypes[0],gap=100;
+  const x=side==="right"?source.x+(source.width||180)+gap:side==="left"?source.x-preset.width-gap:source.x+((source.width||180)-preset.width)/2;
+  let y=side==="bottom"?source.y+(source.height||105)+gap:side==="top"?source.y-preset.height-gap:source.y+((source.height||105)-preset.height)/2;
+  const lane=d.elements.find(e=>e.type==="lane"&&source.x+(source.width||180)/2>=e.x+135&&source.x+(source.width||180)/2<=e.x+e.width&&source.y+(source.height||105)/2>=e.y&&source.y+(source.height||105)/2<=e.y+e.height);
+  if(lane&&(side==="left"||side==="right"))y=Math.max(lane.y+12,Math.min(y,lane.y+lane.height-preset.height-12));
+  const next={id:id(),type:"shape",shape:type,text:preset.label,color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x,y,width:preset.width,height:preset.height};
+  d.elements.push(next,{id:id(),type:"connector",from:source.id,to:next.id});selectedElement=null;touchDiagram(d);render();
 }
 function showMermaidModal(existing = null) {
   const defaultCode = `flowchart TD\n    A[Ideia] --> B[Etapa]\n    B --> C[Resultado]`;
@@ -257,8 +336,9 @@ function showMermaidModal(existing = null) {
   };
 }
 function editMermaid(d, elementId) { const el = d.elements.find(e => e.id === elementId); if (el) showMermaidModal(el); }
-function deleteElement(d, elementId) { d.elements = d.elements.filter(e => e.id !== elementId); touchDiagram(d); render(); }
-function cycleColor(d, elementId) { const el = d.elements.find(e => e.id === elementId); if (!el) return; el.color = colors[(colors.indexOf(el.color) + 1) % colors.length]; touchDiagram(d); render(); }
+function deleteElement(d, elementId) { d.elements = d.elements.filter(e => e.id !== elementId&&!(e.type==="connector"&&(e.from===elementId||e.to===elementId))); touchDiagram(d); render(); }
+function confirmDeleteElement(d,elementId){const item=d.elements.find(e=>e.id===elementId);if(!item)return;showConfirmDialog({title:"Excluir este item?",message:"Essa ação removerá o item e as conexões ligadas a ele.",confirmLabel:"Excluir item",onConfirm:()=>{d.elements=d.elements.filter(e=>e.id!==elementId&&!(e.type==="connector"&&(e.from===elementId||e.to===elementId)));selectedElement=null;touchDiagram(d);render();}});}
+function showColorMenu(d,elementId,anchor){const item=d.elements.find(e=>e.id===elementId);if(!item)return;const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();root.innerHTML=`<div class="action-menu-backdrop" id="actionMenuBackdrop"><div class="color-menu" id="colorMenu">${colors.map(color=>`<button data-color-choice="${color}" style="--swatch:${color}" aria-label="Selecionar cor" title="Selecionar cor"></button>`).join("")}</div></div>`;const menu=root.querySelector("#colorMenu");menu.style.left=`${Math.min(rect.left,window.innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(rect.bottom+5,window.innerHeight-menu.offsetHeight-8)}px`;root.querySelector("#actionMenuBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="actionMenuBackdrop")closeModal();});menu.querySelectorAll("[data-color-choice]").forEach(button=>button.addEventListener("click",()=>{item.color=button.dataset.colorChoice;closeModal();touchDiagram(d);render();}));}
 
 function startDrag(ev, d, el) {
   if (ev.target.closest("button,textarea,input,[data-resize]")) return;
@@ -304,13 +384,15 @@ function drawConnections(d) {
   const lines=d.elements.filter(e=>e.type==="connector");
   svg.innerHTML=`<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#8275d8" /></marker></defs>`+lines.map(line=>{
     const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);if(!a||!b)return "";
-    const aw=a.width||220,ah=a.height||190,bw=b.width||220,bh=b.height||190,x1=a.x+aw/2,y1=a.y+ah/2,x2=b.x+bw/2,y2=b.y+bh/2,dx=(x2-x1)*.45;
-    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}" marker-end="url(#arrowhead)" />`;
+    const aw=a.width||220,ah=a.height||190,bw=b.width||220,bh=b.height||190,ax=a.x+aw/2,ay=a.y+ah/2,bx=b.x+bw/2,by=b.y+bh/2;
+    const edge=(item,cx,cy,tx,ty)=>{const w=(item.width||220)/2,h=(item.height||190)/2,dx=tx-cx,dy=ty-cy;let scale;if(item.shape==="decision")scale=1/(Math.abs(dx)/w+Math.abs(dy)/h||1);else scale=1/(Math.max(Math.abs(dx)/w,Math.abs(dy)/h)||1);return{x:cx+dx*scale,y:cy+dy*scale};};
+    const from=edge(a,ax,ay,bx,by),to=edge(b,bx,by,ax,ay);
+    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" marker-end="url(#arrowhead)" />`;
   }).join("");
   svg.querySelectorAll("[data-connector]").forEach(path=>path.addEventListener("click",ev=>{ev.stopPropagation();selectedElement=path.dataset.connector;drawConnections(d);}));
 }
 async function renderSvg(source, renderId) {
-  if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "basis", htmlLabels: true } }); return module.default; });
+  if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "linear", htmlLabels: true } }); return module.default; });
   const mermaid = await mermaidPromise;
   const result = await mermaid.render(renderId.replace(/[^a-zA-Z0-9_-]/g, ""), source);
   return result.svg;
@@ -319,19 +401,23 @@ async function renderSvg(source, renderId) {
 function touchDiagram(d) {
   d.updatedAt = Date.now(); persist();
   const status = document.getElementById("saveStatus"); if (status) { status.innerHTML = "<i></i> Salvando…"; clearTimeout(touchDiagram.timer); touchDiagram.timer = setTimeout(() => { if (status.isConnected) status.innerHTML = "<i></i> Salvo"; }, 450); }
-  const count = document.querySelector(".bottom-bar span:nth-child(2)"); if (count) count.textContent = `${d.elements.length} itens no quadro`;
+  const count = document.querySelector(".bottom-bar span:nth-child(2)"); if (count) count.textContent = itemSummary(d);
 }
 function publish(d) {
   const payload = base64UrlEncode(JSON.stringify({ title: diagramTitle(d), elements: d.elements }));
   const url = `${location.origin}${location.pathname}#share=${payload}`;
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => toast("Link de visualização copiado")).catch(() => prompt("Copie o link de visualização:", url));
-  else prompt("Copie o link de visualização:", url);
+  showShareDialog(url);
+}
+function showShareDialog(url){
+  const root=document.getElementById("modalRoot");root.innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div><h2>Publicar diagrama</h2><p>Qualquer pessoa com este link poderá visualizar o quadro.</p></div></div><button class="icon-button" data-close-modal>×</button></div><label class="field-label">Link de visualização<input class="text-input" id="shareUrl" readonly value="${escapeHtml(url)}" /></label><div class="modal-actions"><button class="button secondary" data-close-modal>Fechar</button><button class="button primary" id="copyShare">Copiar link</button></div></section></div>`;
+  root.querySelectorAll("[data-close-modal]").forEach(btn=>btn.addEventListener("click",closeModal));root.querySelector("#modalBackdrop").addEventListener("click",ev=>{if(ev.target.id==="modalBackdrop")closeModal();});
+  root.querySelector("#copyShare").addEventListener("click",async()=>{const input=root.querySelector("#shareUrl");try{await navigator.clipboard.writeText(url);toast("Link copiado");closeModal();}catch{input.focus();input.select();document.execCommand("copy");toast("Link copiado");}});
 }
 function renderShared() {
   try {
     const encoded = new URLSearchParams(location.hash.slice(1)).get("share");
     const data = JSON.parse(base64UrlDecode(encoded));
-    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap"><div class="shared-canvas" id="sharedCanvas"><svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector").map(renderElement).join("")}</div></div></main></div>`;
+    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap"><div class="shared-canvas" id="sharedCanvas">${data.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector"&&e.type!=="lane").map(renderElement).join("")}</div></div></main></div>`;
     data.elements.filter(e => e.type === "sticky").forEach(e => { const n = document.querySelector(`[data-text="${e.id}"]`); if (n) { n.disabled = true; n.readOnly = true; } });
     drawConnections({ elements: data.elements }); renderAllMermaid({ elements: data.elements });
   } catch { app.innerHTML = `<div class="share-error"><h1>Este link não parece válido</h1><a href="${location.pathname}">Abrir VLI Diagrams</a></div>`; }
