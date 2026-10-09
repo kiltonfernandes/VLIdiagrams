@@ -87,6 +87,26 @@ async function bootWorkspace() {
       if (!save.ok) throw new Error("Não foi possível copiar os dados deste navegador para o Turso.");
       state = local;
     } else state = { ...initialState, ...remote };
+    let converted = false;
+    for (const diagram of state.diagrams) {
+      for (const card of [...(diagram.elements || []).filter(element => element.type === "mermaid" && element.convertOnLoad)]) {
+        try {
+          const elements = await convertMermaidFlowchart(card.code, { x: card.x || 0, y: card.y || 0 });
+          diagram.elements = diagram.elements.filter(element => element.id !== card.id);
+          diagram.elements.push(...elements);
+          diagram.sourceMermaid = card.code;
+          diagram.updatedAt = Date.now();
+          converted = true;
+        } catch (error) {
+          card.convertOnLoad = false;
+          console.warn("O código Mermaid ficou como cartão porque não deu para converter em formas editáveis:", error);
+        }
+      }
+    }
+    if (converted) {
+      const save = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
+      if (!save.ok) throw new Error("O Mermaid foi lido, mas as formas convertidas não puderam ser salvas no Turso.");
+    }
     workspaceReady = true; localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render();
   } catch (error) {
     app.innerHTML = `<main class="login-screen"><div class="login-card"><div class="brand-mark">V</div><h1>Não consegui carregar o espaço</h1><p>${escapeHtml(error.message)}</p><button class="button primary" id="retryWorkspace">Tentar novamente</button></div></main>`;

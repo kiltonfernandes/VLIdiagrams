@@ -49,13 +49,13 @@ const handler = createMcpHandler(() => {
     state.diagrams.unshift(diagram); await writeWorkspace(state); return text(diagram);
   });
   server.registerTool("create_diagram_from_mermaid", {
-    description: "Cria um diagrama VLI a partir do código Mermaid. O código aparece renderizado no quadro e pode ser convertido em formas editáveis no editor.",
+    description: "Cria um diagrama VLI a partir do código Mermaid. Fluxogramas são convertidos automaticamente em formas, raias e conectores editáveis na próxima abertura do VLI; outros tipos permanecem renderizados como Mermaid.",
     inputSchema: z.object({ title: z.string().min(1).max(160), mermaid: z.string().min(1).max(50000), folder_id: z.string().optional() })
   }, async ({ title, mermaid, folder_id }) => {
     const state = await readWorkspace();
     if (folder_id && !state.folders.some(item => item.id === folder_id)) return text("Pasta não encontrada.");
     const now = Date.now(); const id = makeId();
-    const diagram = { id, title: title.trim(), folderId: folder_id || null, elements: [{ id: makeId(), type: "mermaid", title: title.trim(), code: mermaid, x: 120, y: 120, width: 720, height: 460 }], sourceMermaid: mermaid, theme: "default", createdAt: now, updatedAt: now };
+    const diagram = { id, title: title.trim(), folderId: folder_id || null, elements: [{ id: makeId(), type: "mermaid", title: title.trim(), code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }], sourceMermaid: mermaid, createdAt: now, updatedAt: now };
     state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, message: "Diagrama salvo no VLI." });
   });
   server.registerTool("update_diagram_from_mermaid", {
@@ -64,7 +64,7 @@ const handler = createMcpHandler(() => {
   }, async ({ diagram_id, mermaid, title }) => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
     if (!diagram) return text("Diagrama não encontrado.");
-    diagram.title = title?.trim() || diagram.title; diagram.elements = [{ id: makeId(), type: "mermaid", title: diagram.title, code: mermaid, x: 120, y: 120, width: 720, height: 460 }]; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
+    diagram.title = title?.trim() || diagram.title; diagram.elements = [{ id: makeId(), type: "mermaid", title: diagram.title, code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }]; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
     await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, message: "Código Mermaid atualizado." });
   });
   server.registerTool("rename_diagram", {
