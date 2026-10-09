@@ -4,6 +4,8 @@ const initialState = { folders: [], diagrams: [], activeDiagramId: null };
 let state = readState();
 let mermaidPromise;
 let selectedElement = null;
+let connectMode = false;
+let deleteHandlerBound = false;
 let currentScale = 1;
 let pan = { x: 0, y: 0 };
 let drag = null;
@@ -68,16 +70,20 @@ function renderEditor(d) {
       <div class="canvas-toolbar">
         <div class="tool-group"><button class="tool active" data-tool="select" title="Selecionar e mover">↖</button><button class="tool" data-tool="pan" title="Mover tela">✥</button></div><div class="tool-divider"></div>
         <button class="tool wide" id="addSticky" title="Adicionar nota adesiva"><span class="tool-sticky">▰</span><span>Nota</span></button>
+        <button class="tool wide" id="addShape" title="Adicionar forma"><span class="tool-shape">◇</span><span>Forma</span></button>
+        <button class="tool wide" id="connectItems" title="Conectar dois itens"><span>⤳</span><span>Conectar</span></button>
         <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button>
         <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn">＋</button><button class="icon-button" id="fitCanvas" title="Ajustar à tela">⛶</button></div>
       </div>
-      <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Arraste as notas e blocos para organizar suas ideias</div></div>
+      <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent"><svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Arraste notas, formas e diagramas para organizar suas ideias</div></div>
       <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${d.elements.length} itens no quadro</span></div>
     </div>`;
 }
 
 function renderElement(e) {
+  if (e.type === "connector") return "";
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "rect")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;background:${e.color || "#d9d3ff"}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
 
@@ -162,6 +168,12 @@ function bindEditor(d) {
   title.addEventListener("input", () => { d.title = title.value; touchDiagram(d); });
   title.addEventListener("blur", () => { if (!title.value.trim()) title.value = d.title = "Diagrama sem título"; persist(); });
   document.getElementById("addSticky").addEventListener("click", () => addSticky(d));
+  document.getElementById("addShape").addEventListener("click", () => addShape(d));
+  document.getElementById("connectItems").addEventListener("click", () => {
+    connectMode = !connectMode; selectedElement = null;
+    document.getElementById("connectItems").classList.toggle("active", connectMode);
+    toast(connectMode ? "Selecione dois itens para conectá-los" : "Modo de conexão encerrado");
+  });
   document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal());
   document.getElementById("publishDiagram").addEventListener("click", () => publish(d));
   document.getElementById("moveDiagram").addEventListener("click", () => { moveDiagramById(d); persist(); render(); });
@@ -182,7 +194,13 @@ function bindEditor(d) {
   document.querySelectorAll("[data-resize]").forEach(handle => handle.addEventListener("pointerdown", ev => startResize(ev, d, handle.dataset.resize)));
   document.querySelectorAll("[data-element]").forEach(el => {
     el.addEventListener("pointerdown", ev => startDrag(ev, d, el));
-    el.addEventListener("click", () => { if (!suppressClick) { selectedElement = el.dataset.element; document.querySelectorAll("[data-element]").forEach(x => x.classList.toggle("selected", x === el)); } });
+    el.addEventListener("click", () => {
+      if (suppressClick) return;
+      if (connectMode) {
+        if (!selectedElement) { selectedElement = el.dataset.element; el.classList.add("selected"); toast("Agora selecione o segundo item"); }
+        else if (selectedElement !== el.dataset.element) { d.elements.push({ id:id(),type:"connector",from:selectedElement,to:el.dataset.element }); connectMode=false; selectedElement=null; document.getElementById("connectItems")?.classList.remove("active"); touchDiagram(d); drawConnections(d); toast("Conector adicionado"); }
+      } else { selectedElement = el.dataset.element; document.querySelectorAll("[data-element]").forEach(x => x.classList.toggle("selected", x === el)); }
+    });
   });
   const wrap = document.getElementById("canvasWrap");
   wrap.addEventListener("wheel", ev => { ev.preventDefault(); zoom(ev.deltaY < 0 ? 1.08 : 1 / 1.08, { x: ev.clientX, y: ev.clientY }); }, { passive: false });
@@ -191,6 +209,14 @@ function bindEditor(d) {
     if (!drag || drag.type !== "pan") return; pan.x = drag.panX + ev.clientX - drag.x; pan.y = drag.panY + ev.clientY - drag.y; applyTransform();
   });
   wrap.addEventListener("pointerup", () => { if (drag?.type === "pan") drag = null; });
+  if (!deleteHandlerBound) {
+    window.addEventListener("keydown", ev => {
+      const active = currentDiagram();
+      if (active && (ev.key === "Delete" || ev.key === "Backspace") && selectedElement && !ev.target.closest("textarea,input")) { deleteElement(active, selectedElement); selectedElement = null; }
+    });
+    deleteHandlerBound = true;
+  }
+  drawConnections(d);
   renderAllMermaid(d);
 }
 
@@ -198,6 +224,10 @@ function addSticky(d, x = 100 + Math.random() * 140, y = 100 + Math.random() * 1
   const note = { id: id(), type: "sticky", text, color: colors[d.elements.filter(e => e.type === "sticky").length % colors.length], x, y, width: 220, height: 190 };
   d.elements.push(note); touchDiagram(d); render();
   const textarea = document.querySelector(`[data-text="${note.id}"]`); textarea?.focus();
+}
+function addShape(d, shape = "rect") {
+  const item = { id:id(),type:"shape",shape,text:"Nova forma",color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x:240+Math.random()*120,y:130+Math.random()*120,width:180,height:105 };
+  d.elements.push(item); touchDiagram(d); render(); document.querySelector(`[data-text="${item.id}"]`)?.focus();
 }
 function showMermaidModal(existing = null) {
   const defaultCode = `flowchart TD\n    A[Ideia] --> B[Etapa]\n    B --> C[Resultado]`;
@@ -241,7 +271,7 @@ function startDrag(ev, d, el) {
     if (!drag || drag.type !== "element") return;
     const item = d.elements.find(e => e.id === drag.id), node = document.querySelector(`[data-element="${drag.id}"]`); if (!item || !node) return;
     item.x = drag.startX + (moveEv.clientX - drag.x) / currentScale; item.y = drag.startY + (moveEv.clientY - drag.y) / currentScale;
-    node.style.left = item.x + "px"; node.style.top = item.y + "px"; suppressClick = true;
+    node.style.left = item.x + "px"; node.style.top = item.y + "px"; suppressClick = true; drawConnections(d);
   };
   const onUp = () => { if (drag?.type === "element") { drag = null; touchDiagram(d); setTimeout(() => suppressClick = false, 10); } window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp, { once: true });
@@ -250,7 +280,7 @@ function startResize(ev, d, elementId) {
   ev.preventDefault(); ev.stopPropagation();
   const el = d.elements.find(e => e.id === elementId), node = document.querySelector(`[data-element="${elementId}"]`); if (!el || !node) return;
   const start = { x: ev.clientX, y: ev.clientY, width: node.offsetWidth, height: node.offsetHeight };
-  const onMove = moveEv => { el.width = Math.max(180, start.width + (moveEv.clientX - start.x) / currentScale); el.height = Math.max(150, start.height + (moveEv.clientY - start.y) / currentScale); node.style.width = `${el.width}px`; node.style.height = `${el.height}px`; };
+  const onMove = moveEv => { el.width = Math.max(180, start.width + (moveEv.clientX - start.x) / currentScale); el.height = Math.max(105, start.height + (moveEv.clientY - start.y) / currentScale); node.style.width = `${el.width}px`; node.style.height = `${el.height}px`; drawConnections(d); };
   const onUp = () => { window.removeEventListener("pointermove", onMove); touchDiagram(d); };
   window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp, { once: true });
 }
@@ -268,6 +298,16 @@ async function renderAllMermaid(d) {
     try { target.innerHTML = await renderSvg(element.code, "canvas-" + element.id); }
     catch (error) { target.innerHTML = `<pre class="render-error">${escapeHtml(error.message || "Não foi possível renderizar este Mermaid")}</pre>`; }
   }
+}
+function drawConnections(d) {
+  const svg=document.getElementById("connections"); if(!svg)return;
+  const lines=d.elements.filter(e=>e.type==="connector");
+  svg.innerHTML=`<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#8275d8" /></marker></defs>`+lines.map(line=>{
+    const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);if(!a||!b)return "";
+    const aw=a.width||220,ah=a.height||190,bw=b.width||220,bh=b.height||190,x1=a.x+aw/2,y1=a.y+ah/2,x2=b.x+bw/2,y2=b.y+bh/2,dx=(x2-x1)*.45;
+    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}" marker-end="url(#arrowhead)" />`;
+  }).join("");
+  svg.querySelectorAll("[data-connector]").forEach(path=>path.addEventListener("click",ev=>{ev.stopPropagation();selectedElement=path.dataset.connector;drawConnections(d);}));
 }
 async function renderSvg(source, renderId) {
   if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "basis", htmlLabels: true } }); return module.default; });
@@ -291,9 +331,9 @@ function renderShared() {
   try {
     const encoded = new URLSearchParams(location.hash.slice(1)).get("share");
     const data = JSON.parse(base64UrlDecode(encoded));
-    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap"><div class="shared-canvas" id="sharedCanvas">${data.elements.map(renderElement).join("")}</div></div></main></div>`;
+    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap"><div class="shared-canvas" id="sharedCanvas"><svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector").map(renderElement).join("")}</div></div></main></div>`;
     data.elements.filter(e => e.type === "sticky").forEach(e => { const n = document.querySelector(`[data-text="${e.id}"]`); if (n) { n.disabled = true; n.readOnly = true; } });
-    renderAllMermaid({ elements: data.elements });
+    drawConnections({ elements: data.elements }); renderAllMermaid({ elements: data.elements });
   } catch { app.innerHTML = `<div class="share-error"><h1>Este link não parece válido</h1><a href="${location.pathname}">Abrir VLI Diagrams</a></div>`; }
 }
 function base64UrlEncode(value) { const bytes = new TextEncoder().encode(value); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, ""); }
