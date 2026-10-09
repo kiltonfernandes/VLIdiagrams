@@ -235,7 +235,7 @@ function bindEditor(d) {
   document.querySelectorAll("[data-element]").forEach(el => {
     el.addEventListener("pointerdown", ev => startDrag(ev, d, el));
     el.addEventListener("click", () => {
-      if (suppressClick) return;
+      if (suppressClick || document.getElementById("canvasWrap")?.classList.contains("pan-mode")) return;
       if (connectMode) {
         if (!selectedElement) { selectedElement = el.dataset.element; el.classList.add("selected"); toast("Agora selecione o segundo item"); }
         else if (selectedElement !== el.dataset.element) { d.elements.push({ id:id(),type:"connector",from:selectedElement,to:el.dataset.element }); connectMode=false; selectedElement=null; document.getElementById("connectItems")?.classList.remove("active"); touchDiagram(d); drawConnections(d); toast("Conector adicionado"); }
@@ -244,11 +244,27 @@ function bindEditor(d) {
   });
   const wrap = document.getElementById("canvasWrap");
   wrap.addEventListener("wheel", ev => { ev.preventDefault(); zoom(ev.deltaY < 0 ? 1.08 : 1 / 1.08, { x: ev.clientX, y: ev.clientY }); }, { passive: false });
-  wrap.addEventListener("pointerdown", ev => { if (ev.target.closest("[data-element]") || !wrap.classList.contains("pan-mode")) return; drag = { type: "pan", x: ev.clientX, y: ev.clientY, panX: pan.x, panY: pan.y }; wrap.setPointerCapture(ev.pointerId); });
-  wrap.addEventListener("pointermove", ev => {
-    if (!drag || drag.type !== "pan") return; pan.x = drag.panX + ev.clientX - drag.x; pan.y = drag.panY + ev.clientY - drag.y; applyTransform();
+  wrap.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0 || !wrap.classList.contains("pan-mode") || ev.target.closest("button,input,textarea")) return;
+    ev.preventDefault();
+    drag = { type: "pan", pointerId: ev.pointerId, x: ev.clientX, y: ev.clientY, panX: pan.x, panY: pan.y, moved: false };
+    wrap.setPointerCapture(ev.pointerId);
   });
-  wrap.addEventListener("pointerup", () => { if (drag?.type === "pan") drag = null; });
+  wrap.addEventListener("pointermove", ev => {
+    if (!drag || drag.type !== "pan" || drag.pointerId !== ev.pointerId) return;
+    const dx=ev.clientX-drag.x,dy=ev.clientY-drag.y;
+    if(Math.abs(dx)+Math.abs(dy)>2){drag.moved=true;suppressClick=true;wrap.classList.add("panning");}
+    pan.x=drag.panX+dx;pan.y=drag.panY+dy;applyTransform();
+  });
+  const stopPan = ev => {
+    if (!drag || drag.type !== "pan" || (ev.pointerId!==undefined&&drag.pointerId!==ev.pointerId)) return;
+    const moved=drag.moved,pointerId=drag.pointerId;drag=null;wrap.classList.remove("panning");
+    if(wrap.hasPointerCapture(pointerId))wrap.releasePointerCapture(pointerId);
+    if(moved)setTimeout(()=>suppressClick=false,0);
+  };
+  wrap.addEventListener("pointerup", stopPan);
+  wrap.addEventListener("pointercancel", stopPan);
+  wrap.addEventListener("lostpointercapture", stopPan);
   if (!deleteHandlerBound) {
     window.addEventListener("keydown", ev => {
       const active = currentDiagram();
@@ -422,10 +438,11 @@ function connectionPoint(item,side){
   const x=item.x,y=item.y,w=item.width||220,h=item.height||190;
   if(item.shape==="decision"){
     const insetX=w*.14,insetY=h*.14;
-    if(side==="top")return{x:x+w/2,y:y+insetY};
-    if(side==="bottom")return{x:x+w/2,y:y+h-insetY};
-    if(side==="left")return{x:x+insetX,y:y+h/2};
-    return{x:x+w-insetX,y:y+h/2};
+    const extent=Math.min(w*.6,h*.72)/Math.SQRT2;
+    if(side==="top")return{x:x+w/2,y:y+h/2-extent};
+    if(side==="bottom")return{x:x+w/2,y:y+h/2+extent};
+    if(side==="left")return{x:x+w/2-extent,y:y+h/2};
+    return{x:x+w/2+extent,y:y+h/2};
   }
   if(side==="top")return{x:x+w/2,y};
   if(side==="bottom")return{x:x+w/2,y:y+h};
