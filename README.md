@@ -5,7 +5,9 @@ Editor pessoal de diagramas e quadros visuais, feito para publicação estática
 ## Recursos nesta primeira versão
 
 - Pastas e diagramas com criar, renomear, mover e excluir.
-- Quadro com notas adesivas arrastáveis e blocos Mermaid.
+- Quadro com notas adesivas e formas editáveis, arrastáveis e redimensionáveis.
+- Conectores com setas entre itens do quadro.
+- Blocos Mermaid com edição de código e renderização ao vivo.
 - Edição de Mermaid com renderização ao vivo usando a linha 11 do Mermaid.
 - Zoom, pan, salvamento automático no navegador e link de visualização compartilhável.
 - Interface em português, sem conexão com o Notion nesta etapa.
