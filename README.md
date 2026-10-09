@@ -10,6 +10,7 @@ Editor pessoal de diagramas e quadros visuais, publicado como aplicação estát
 - Formas para passo, decisão, início/fim, entrada/saída, documento, armazenamento de dados e subprocesso.
 - Botões de adição nas quatro laterais das formas para criar uma etapa conectada automaticamente.
 - Blocos Mermaid com prévia ao vivo e renderização via Mermaid 11+.
+- Importação de Mermaid `flowchart`, `graph` e `swimlane` como formas, raias e conectores editáveis.
 - Zoom, pan, salvamento automático no navegador e link de visualização compartilhável.
 - Interface em português com diálogos próprios para ações de biblioteca e do quadro.
 
