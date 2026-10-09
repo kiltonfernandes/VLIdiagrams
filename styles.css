@@ -666,3 +666,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .shape-card.decision:focus-within .shape-head { opacity: 1; }
 .shape-card.decision .resize-handle { opacity: 0; pointer-events: none; }
 .shape-card.decision:hover .resize-handle { opacity: .7; pointer-events: auto; }
+
+.shape-card.decision textarea {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 68%;
+  height: 48%;
+  flex: none;
+  padding: 3px 4px;
+  transform: translate(-50%, -50%);
+}
