@@ -608,14 +608,18 @@ async function getMermaid() {
   return mermaidPromise;
 }
 function serializeMermaid(task){const result=mermaidQueue.then(task,task);mermaidQueue=result.then(()=>undefined,()=>undefined);return result;}
+function normalizeMermaidSource(source) {
+  return String(source || "").replace(/\r\n?/g, "\n").replace(/([\]\)}])[ \t]+(?=[A-Za-z0-9_][A-Za-z0-9_.-]*\s*(?:\[|\(|\{|>))/g, "$1\n");
+}
 async function renderSvg(source, renderId) {
   const mermaid = await getMermaid();
-  return serializeMermaid(async()=>{const result=await mermaid.render(renderId.replace(/[^a-zA-Z0-9_-]/g,""),source);return result.svg;});
+  const normalizedSource = normalizeMermaidSource(source);
+  return serializeMermaid(async()=>{const result=await mermaid.render(renderId.replace(/[^a-zA-Z0-9_-]/g,""),normalizedSource);return result.svg;});
 }
 
 async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
   const graph=await serializeMermaid(async()=>{
-    const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(source),db=parsed.db||parsed.parser?.yy;
+    const mermaid=await getMermaid(),normalizedSource=normalizeMermaidSource(source),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizedSource),db=parsed.db||parsed.parser?.yy;
     const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
     if(!/flowchart|graph|swimlane/.test(diagramType)||!db?.getVertices||!db?.getEdges) throw new Error("A conversão editável aceita Mermaid flowchart, graph e swimlane. Outros tipos podem ser adicionados como cartão Mermaid no editor.");
     const rawVertices=db.getVertices(),vertices=[...(rawVertices instanceof Map?rawVertices.values():Array.isArray(rawVertices)?rawVertices:Object.values(rawVertices||{}))].map(v=>({...v}));
