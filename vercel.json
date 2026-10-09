@@ -1,4 +1,8 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "functions": {
+    "api/mcp.js": { "includeFiles": "assets/fonts/**", "maxDuration": 60 },
+    "api/export.js": { "includeFiles": "assets/fonts/**", "maxDuration": 60 }
+  }
 }

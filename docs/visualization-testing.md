@@ -51,3 +51,21 @@ Chrome, Edge e Comet em Windows, nas versões efetivamente usadas pelo usuário:
 7. Conferir novos fluxos com grupos paralelos, grupos aninhados e muitos retornos.
 
 Este teste em Chromium não substitui a conferência nessas versões comerciais.
+
+## Exportação e sequência nativa
+
+Verificação realizada em 9 de outubro de 2026:
+
+- 18 testes Node passaram: os anteriores de geometria, limites de PNG, recorte de SVG, escopo de fase, modelo de sequência, renderização de origem no servidor e autenticação de download.
+- PNG/SVG baixados pelo navegador para formas nativas, sequência nativa e cartão Mermaid.
+- Sete participantes, 15 mensagens e um bloco alt/else importados pelo Mermaid real 11.12.0.
+- Conteúdo editado, salvo no workspace de teste e exportado.
+- Fase exportada sem ligações penduradas para fora; visão geral exportada com resumos.
+- PNG transparente com alfa 0 no canto do recorte; PNG branco com alfa 255.
+- Fonte embutida no ambiente do servidor conferida visualmente; textos, mensagens e alternativas presentes no PNG.
+- Diálogo de exportação contido em janela 390 × 700; fechamento por Escape.
+- Fluxograma de 28 etapas do usuário e sequência fornecida pelo usuário utilizados apenas na inspeção local, sem gravar alterações em produção.
+
+Teste reproduzível da interface: instalar dependências, executar `npx playwright install chromium` e `npm run test:browser`. O teste usa workspace fictício em HTTP local. Em ambientes cujo navegador não alcança a CDN diretamente, `VLI_TEST_CURL_CDN=1` encaminha as requisições reais de módulos por curl durante o teste. As fontes externas do tema podem falhar nesse ambiente restrito; falhas de JavaScript do aplicativo são verificadas separadamente.
+
+A apresentação de imagem/recurso pelo agente do Notion e o comportamento nas instalações comerciais de Comet/Chrome/Edge continuam sujeitos à conferência no cliente do usuário.

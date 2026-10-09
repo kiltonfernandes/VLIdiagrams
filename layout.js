@@ -79,7 +79,16 @@ export async function layoutElements(elements, direction = "DOWN", engine, offse
       labels: edge.text ? [{ id: edge.id + "-label", text: edge.text, width: Math.max(32, String(edge.text).length * 7.2), height: 20 }] : []
     }))
   };
-  const laidOut = await (engine || await getLayoutEngine()).layout(graph);
+  const layoutEngine=engine||await getLayoutEngine();
+  let laidOut;
+  try{laidOut=await layoutEngine.layout(structuredClone(graph));}
+  catch(firstError){
+    // ELK 0.11 can fail on a compound group containing a cycle and an outgoing edge.
+    // Retain hierarchy and retry with the alternate supported cycle breaker.
+    const retry=structuredClone(graph);
+    const configure=node=>{if(node.layoutOptions)node.layoutOptions["elk.layered.cycleBreaking.strategy"]="DEPTH_FIRST";for(const child of node.children||[])configure(child);};
+    configure(retry);laidOut=await layoutEngine.layout(retry);
+  }
   const byId = new Map(result.map(e => [e.id, e]));
   const routes = [];
   const origins = new Map();

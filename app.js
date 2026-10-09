@@ -1,10 +1,12 @@
+import { DEFAULT_THEME_ID, diagramThemes, getTheme } from "./themes.js";
+import { snapshotMermaid, nativeElements } from "./mermaid-native.js";
+import { routeConnection } from "./connections.js";
 import { layoutElements, geometryKey, diagramBounds } from "./layout.js";
+import { sequenceGeometry, sequenceSvg, validateSequence } from "./sequence.js";
+import { buildDiagramSvg, downloadDiagram, exportFilename, pngDimensions, portableMermaid, exportElements } from "./export.js";
 
 const STORAGE_KEY = "vli-diagrams-v1";
 const colors = ["#ffe58f", "#ffbdbd", "#c7f2c2", "#c8e4ff", "#e7d1ff", "#ffd8a8"];
-const DEFAULT_THEME_ID="paper";
-const diagramThemes=[["paper","Papel","#fbfcfe","#e6eaf0","#fff","#f3f5f8","#dbe1e8","#253247","#63748b","#5273a8","#c48620","#34846a","#36809a","#7b63a7"],["ocean","Oceano","#f7fbff","#dceaf5","#fff","#eaf4fb","#cfdfed","#17324d","#47708b","#2877a7","#d08a2d","#258877","#3e82a2","#557cb7"],["lavender","Lavanda","#faf9ff","#e8e2f4","#fff","#f3effa","#ded5ec","#302b48","#71658c","#7661bd","#bf8734","#498c79","#5188a0","#9b649d"],["forest","Floresta","#f8fbf8","#dfeae1","#fff","#edf5ee","#d4e2d6","#24392b","#55705e","#4d8060","#b38630","#26845b","#438279","#757f4f"],["sunset","Pôr do sol","#fffaf7","#f2e4dc","#fff","#fff0e7","#ead8cc","#493126","#806257","#c06b49","#cb862c","#518878","#55839a","#9b6479"],["sand","Areia","#fcfaf6","#ece5d9","#fff","#f5f0e6","#e3d9c8","#3e392f","#766d5d","#8b7550","#bc762e","#557d63","#587d8a","#8f6a9b"],["slate","Ardósia","#f8fafc","#e3e8ee","#fff","#eef2f6","#d5dde6","#263341","#586777","#52687f","#bd8230","#43806c","#3d7b91","#7273a5"],["mint","Menta","#f6fcfa","#dbeee8","#fff","#e8f6f1","#cfe4dc","#203c37","#4e766d","#398677","#b27d2d","#268263","#397f93","#5e7caa"],["coral","Coral","#fff9f8","#f1e1df","#fff","#fdf0ee","#ead6d4","#442f32","#7b5d62","#b45e68","#c5862f","#438578","#4b8090","#8a648b"],["cobalt","Cobalto","#f7faff","#dfe7f6","#fff","#edf2fc","#d3def0","#253250","#596b8f","#3e65b6","#c1842a","#34836e","#367f9c","#8266b0"],["sage","Sálvia","#fafbf7","#e7eadc","#fff","#f2f4e9","#dce1d0","#34392c","#68705c","#748655","#b98131","#448265","#4c8290","#8c6a91"],["berry","Amora","#fcf8fc","#eee1eb","#fff","#f7edf5","#e5d4e2","#402b3f","#765e75","#95629b","#c1842a","#43856e","#4f8096","#a34f79"],["ice","Gelo","#f7fcfd","#dcecef","#fff","#eaf5f6","#cee1e4","#21373d","#56747a","#398194","#c2862b","#318274","#357f90","#687fa6"],["terracotta","Terracota","#fcf8f5","#efe2d8","#fff","#f8eee6","#e4d4c7","#423329","#796557","#a66e4e","#c0812b","#4b826d","#4e7d89","#876b98"],["meadow","Campo","#f8fbf7","#e1ecdf","#fff","#eef6eb","#d3e3d0","#2b392b","#5d725a","#4d8c57","#bd8230","#368264","#488295","#8074a0"],["midnight","Noite clara","#f4f7fb","#dfe5ef","#fff","#e8edf5","#d0d9e6","#202a3b","#52627b","#4d68a3","#bb812b","#37806b","#3d7894","#7865a5"],["peach","Pêssego","#fffaf6","#f3e6dc","#fff","#fff1e6","#ead9ca","#46372f","#78685d","#bb7650","#c38a31","#51856d","#548297","#916d9e"],["orchid","Orquídea","#fbf9fd","#e9e3f0","#fff","#f4eff8","#ded5e8","#352b41","#70627c","#8559a5","#c08831","#498575","#4e8092","#a16083"],["lagoon","Lagoa","#f6fbfa","#dcebe8","#fff","#eaf5f2","#ccdfda","#203b3b","#52716f","#348b89","#bc812f","#2f7e68","#397f9b","#716ba2"],["contrast","Alto contraste","#fff","#e5e7eb","#fff","#f1f3f5","#cbd0d6","#111827","#4b5563","#1d4ed8","#b45309","#047857","#0369a1","#6d28d9"]].map(([id,name,canvas,grid,lane,laneHeader,border,ink,connector,process,decision,terminal,data,subprocess])=>({id,name,canvas,grid,lane,laneHeader,border,ink,connector,process,decision,terminal,data,subprocess}));
-function getTheme(themeId=DEFAULT_THEME_ID){return diagramThemes.find(theme=>theme.id===themeId)||diagramThemes[0];}
 function themeStyle(themeId=DEFAULT_THEME_ID){const t=getTheme(themeId);return `--diagram-canvas:${t.canvas};--diagram-grid:${t.grid};--diagram-lane:${t.lane};--diagram-lane-header:${t.laneHeader};--diagram-line:${t.border};--diagram-ink:${t.ink};--diagram-connector:${t.connector};--theme-process:${t.process};--theme-decision:${t.decision};--theme-terminal:${t.terminal};--theme-data:${t.data};--theme-subprocess:${t.subprocess};`;}
 
 const flowNodeTypes = [
@@ -175,7 +177,7 @@ function miniPreview(d) {
 }
 
 function renderEditor(d) {
-  return `<header class="editor-topbar"><button class="back-button" id="backToLibrary" title="Voltar">←</button><div class="title-stack"><div class="crumbs"><span>Diagramas</span><span>/</span><span>${escapeHtml(state.folders.find(f => f.id === d.folderId)?.name || "Sem pasta")}</span></div><input class="diagram-title-input" id="diagramTitle" value="${escapeHtml(diagramTitle(d))}" aria-label="Nome do diagrama" /></div><span class="save-status" id="saveStatus"><i></i> Salvo</span><div class="top-actions"><button class="button secondary" id="moveDiagram">Mover para pasta</button><button class="button secondary" id="diagramMenu">···</button><button class="button primary" id="publishDiagram">Publicar ↗</button></div></header>
+  return `<header class="editor-topbar"><button class="back-button" id="backToLibrary" title="Voltar">←</button><div class="title-stack"><div class="crumbs"><span>Diagramas</span><span>/</span><span>${escapeHtml(state.folders.find(f => f.id === d.folderId)?.name || "Sem pasta")}</span></div><input class="diagram-title-input" id="diagramTitle" value="${escapeHtml(diagramTitle(d))}" aria-label="Nome do diagrama" /></div><span class="save-status" id="saveStatus"><i></i> Salvo</span><div class="top-actions"><button class="button secondary" id="moveDiagram">Mover para pasta</button><button class="button secondary" id="diagramMenu">···</button><button class="button secondary" id="exportDiagram">Exportar ↓</button><button class="button primary" id="publishDiagram">Publicar ↗</button></div></header>
     <div class="workspace">
       <div class="canvas-toolbar">
         <div class="tool-group"><button class="tool active" data-tool="select" title="Selecionar e mover">↖</button><button class="tool" data-tool="pan" title="Mover tela">✥</button></div><div class="tool-divider"></div>
@@ -183,19 +185,20 @@ function renderEditor(d) {
         <button class="tool wide" id="addShape" title="Escolher forma"><span class="tool-shape">◇</span><span>Forma</span></button>
         <button class="tool wide" id="addLane" title="Adicionar raia de responsabilidade"><span class="tool-lane">▤</span><span>Raia</span></button>
         <button class="tool wide" id="connectItems" title="Conectar dois itens"><span>⤳</span><span>Conectar</span></button>
-        <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button><button class="tool wide" id="themeButton" title="Escolher tema do diagrama"><span class="tool-theme">◉</span><span>Tema</span></button>
+        <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button><button class="tool wide" id="addSequence" title="Adicionar sequência nativa"><span>⇄</span><span>Sequência</span></button><button class="tool wide" id="themeButton" title="Escolher tema do diagrama"><span class="tool-theme">◉</span><span>Tema</span></button>
         <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut" aria-label="Diminuir zoom">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn" aria-label="Aumentar zoom">＋</button><button class="icon-button" id="fitCanvas" title="Ver diagrama inteiro" aria-label="Ver diagrama inteiro">⛶</button><button class="icon-button" id="readCanvas" title="Ler etapa selecionada ou início" aria-label="Ler etapa selecionada ou início">1:1</button></div>
       </div>
       <div class="reading-toolbar"><button class="button secondary ${overviewVisible?"":"active"}" id="fullFlowCanvas" aria-pressed="${!overviewVisible}">Fluxo completo</button><button class="button secondary ${overviewVisible?"active":""}" id="overviewCanvas" aria-pressed="${overviewVisible}" ${d.elements.some(e=>e.type==="lane")?"":"disabled"}>Visão por fases</button><button class="button secondary" id="organizeFlow">Organizar fluxo</button><button class="button secondary" id="undoLayout" ${layoutUndo?.diagramId===d.id?"":"disabled"}>Desfazer organização</button><label>Direção <select id="flowDirection" aria-label="Direção do fluxo"><option value="DOWN" ${d.layoutDirection!=="RIGHT"?"selected":""}>De cima para baixo</option><option value="RIGHT" ${d.layoutDirection==="RIGHT"?"selected":""}>Da esquerda para a direita</option></select></label><label>Foco <select id="focusLane" aria-label="Focar uma fase ou raia"><option value="">Diagrama inteiro</option>${d.elements.filter(e=>e.type==="lane").map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}</select></label></div>
-      <div class="canvas-wrap ${overviewVisible?"overview-mode":""}" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div>${renderPhaseOverview(d)}<div class="canvas-hint" id="canvasHint">Role para mover a tela; Ctrl + rolagem para aproximar</div><button class="diagram-minimap" id="diagramMinimap" aria-label="Minimapa: clique para centralizar uma região"><svg id="minimapSvg" viewBox="0 0 176 112" aria-hidden="true"></svg></button></div>
+      <div class="canvas-wrap ${overviewVisible?"overview-mode":""}" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(e=>renderElement(e,d.themeId)).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(e=>renderElement(e,d.themeId)).join("")}</div></div>${renderPhaseOverview(d)}<div class="canvas-hint" id="canvasHint">Role para mover a tela; Ctrl + rolagem para aproximar</div><button class="diagram-minimap" id="diagramMinimap" aria-label="Minimapa: clique para centralizar uma região"><svg id="minimapSvg" viewBox="0 0 176 112" aria-hidden="true"></svg></button></div>
       <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${itemSummary(d)}</span></div>
     </div>`;
 }
 
-function renderElement(e) {
+function renderElement(e,themeId=currentDiagram()?.themeId) {
   if (e.type === "connector") return "";
   if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>${e.kind==="phase"?"FASE":"RAIA"}</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if(e.type === "sequence") return `<article class="sequence-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="sequence-head"><strong>${escapeHtml(e.title||"Sequência")}</strong><div><button class="button secondary" data-edit-sequence="${e.id}">Editar sequência</button><button class="icon-button" data-delete="${e.id}" aria-label="Excluir sequência">×</button></div></div>${sequenceSvg(e.model,getTheme(themeId),"native-"+e.id)}</article>`;
   if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${e.color};` : ""}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
@@ -344,6 +347,9 @@ function bindEditor(d) {
   });
   document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal());
   document.getElementById("themeButton").addEventListener("click", () => showThemePicker(d));
+  document.getElementById("exportDiagram").addEventListener("click", () => showExportModal(d));
+  document.getElementById("addSequence").addEventListener("click", () => editSequence(d));
+  document.querySelectorAll("[data-edit-sequence]").forEach(btn=>btn.addEventListener("click",()=>editSequence(d,btn.dataset.editSequence)));
   document.getElementById("publishDiagram").addEventListener("click", () => publish(d));
   document.getElementById("moveDiagram").addEventListener("click", () => moveDiagramById(d));
   document.getElementById("diagramMenu").addEventListener("click", () => diagramMenu(d.id));
@@ -492,7 +498,7 @@ function showMermaidModal(existing = null, options = {}) {
   const importAsDiagram = Boolean(options.importAsDiagram && !existing);
   const defaultCode = `flowchart TD\n    A[Ideia] --> B[Etapa]\n    B --> C[Resultado]`;
   const root = document.getElementById("modalRoot");
-  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal mermaid-modal"><div class="modal-head"><div><span class="mermaid-symbol">⌘</span><div><h2>${existing ? "Editar Mermaid" : importAsDiagram ? "Importar como diagrama" : "Adicionar Mermaid"}</h2><p>${importAsDiagram ? "O fluxograma será convertido em formas, conectores e raias editáveis." : "Cole ou escreva código Mermaid 11+."}</p></div></div><button class="icon-button" id="closeModal">×</button></div><label class="field-label">${importAsDiagram ? "Nome do diagrama" : "Título do bloco"}<input class="text-input" id="mermaidTitleInput" value="${escapeHtml(existing?.title || "Diagrama Mermaid")}" /></label><div class="code-preview"><div class="code-pane"><div class="pane-label">CÓDIGO</div><textarea id="mermaidCodeInput" spellcheck="false">${escapeHtml(existing?.code || defaultCode)}</textarea></div><div class="preview-pane"><div class="pane-label">PRÉVIA</div><div id="modalPreview"><span class="render-loading">Renderizando…</span></div></div></div><div class="modal-foot"><span id="validationMessage">${importAsDiagram ? "Cada etapa e conexão ficará editável no quadro." : "A prévia atualiza enquanto você digita."}</span><div><button class="button secondary" id="cancelModal">Cancelar</button><button class="button primary" id="saveMermaid">${existing ? "Salvar alterações" : importAsDiagram ? "Criar diagrama editável" : "Adicionar ao quadro"}</button></div></div></section></div>`;
+  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal mermaid-modal"><div class="modal-head"><div><span class="mermaid-symbol">⌘</span><div><h2>${existing ? "Editar Mermaid" : importAsDiagram ? "Importar como diagrama" : "Adicionar Mermaid"}</h2><p>${importAsDiagram ? "Fluxogramas viram formas e conexões; sequências preservam participantes e mensagens editáveis." : "Cole ou escreva código Mermaid 11+."}</p></div></div><button class="icon-button" id="closeModal">×</button></div><label class="field-label">${importAsDiagram ? "Nome do diagrama" : "Título do bloco"}<input class="text-input" id="mermaidTitleInput" value="${escapeHtml(existing?.title || "Diagrama Mermaid")}" /></label><div class="code-preview"><div class="code-pane"><div class="pane-label">CÓDIGO</div><textarea id="mermaidCodeInput" spellcheck="false">${escapeHtml(existing?.code || defaultCode)}</textarea></div><div class="preview-pane"><div class="pane-label">PRÉVIA</div><div id="modalPreview"><span class="render-loading">Renderizando…</span></div></div></div><div class="modal-foot"><span id="validationMessage">${importAsDiagram ? "Etapas, participantes e mensagens poderão ser editados no quadro." : "A prévia atualiza enquanto você digita."}</span><div><button class="button secondary" id="cancelModal">Cancelar</button><button class="button primary" id="saveMermaid">${existing ? "Salvar alterações" : importAsDiagram ? "Criar diagrama editável" : "Adicionar ao quadro"}</button></div></div></section></div>`;
   const close = () => root.innerHTML = "";
   document.getElementById("closeModal").onclick = close; document.getElementById("cancelModal").onclick = close;
   document.getElementById("modalBackdrop").addEventListener("click", ev => { if (ev.target.id === "modalBackdrop") close(); });
@@ -508,12 +514,12 @@ function showMermaidModal(existing = null, options = {}) {
     if (!code) { toast("Escreva o código Mermaid antes de salvar"); return; }
     if (importAsDiagram) {
       const saveButton = document.getElementById("saveMermaid"), status = document.getElementById("validationMessage");
-      saveButton.disabled = true; saveButton.textContent = "Convertendo…"; status.textContent = "Lendo formas, conexões e raias…";
+      saveButton.disabled = true; saveButton.textContent = "Convertendo…"; status.textContent = "Lendo a estrutura do diagrama…";
       try {
         const elements = await convertMermaidFlowchart(code);
         const title = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
         const d = { id:id(), title, folderId:null, themeId:DEFAULT_THEME_ID, elements, sourceMermaid:code, createdAt:Date.now(), updatedAt:Date.now() };
-        state.diagrams.unshift(d); state.activeDiagramId=d.id; overviewVisible=shouldShowOverview(d); persist(); close(); render(); fitDiagramToView(d); toast("Fluxograma convertido em itens editáveis");
+        state.diagrams.unshift(d); state.activeDiagramId=d.id; overviewVisible=shouldShowOverview(d); persist(); close(); render(); fitDiagramToView(d); toast("Diagrama convertido em itens editáveis");
       } catch (error) {
         saveButton.disabled = false; saveButton.textContent = "Criar diagrama editável";
         status.textContent = error.message || "Não foi possível converter este fluxograma.";
@@ -596,80 +602,6 @@ async function renderAllMermaid(d) {
     catch (error) { target.innerHTML = `<pre class="render-error">${escapeHtml(error.message || "Não foi possível renderizar este Mermaid")}</pre>`; }
   }
 }
-function connectionPoint(item,side){
-  const x=item.x,y=item.y,w=item.width||220,h=item.height||190;
-  if(item.shape==="decision"){
-    const insetX=w*.14,insetY=h*.14;
-    const extent=Math.min(w*.6,h*.72)/Math.SQRT2;
-    if(side==="top")return{x:x+w/2,y:y+h/2-extent};
-    if(side==="bottom")return{x:x+w/2,y:y+h/2+extent};
-    if(side==="left")return{x:x+w/2-extent,y:y+h/2};
-    return{x:x+w/2+extent,y:y+h/2};
-  }
-  if(side==="top")return{x:x+w/2,y};
-  if(side==="bottom")return{x:x+w/2,y:y+h};
-  if(side==="left")return{x,y:y+h/2};
-  return{x:x+w,y:y+h/2};
-}
-function routeConnection(line,d,key=geometryKey(d.elements)){
-  const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);
-  if(!a||!b)return null;
-  if (line.route?.key === key && line.route.points?.length > 1) {
-    const pts = line.route.points.map(p => ({...p}));
-    // Attach the saved orthogonal route to the visible decision diamond.
-    for (const item of [a,b]) {
-      if (item.shape !== "decision") continue;
-      const at=item===a?0:pts.length-1,next=item===a?1:pts.length-2;
-      const p=pts[at],q=pts[next],vertical=Math.abs(p.x-q.x)<.5;
-      const side=vertical?(p.y<item.y+item.height/2?"top":"bottom"):(p.x<item.x+item.width/2?"left":"right");
-      const tip=connectionPoint(item,side);
-      const elbow=vertical?{x:tip.x,y:p.y}:{x:p.x,y:tip.y};
-      if(at===0)pts.splice(0,1,tip,elbow,p);else pts.splice(pts.length-1,1,p,elbow,tip);
-    }
-    const midpoint=pts[Math.floor(pts.length/2)];
-    return {dPath:pts.map((p,i)=>`${i?"L":"M"} ${p.x} ${p.y}`).join(" "),label:line.route.label||{...midpoint,anchor:"middle"}};
-  }
-  const center=e=>({x:e.x+(e.width||220)/2,y:e.y+(e.height||190)/2});
-  const ca=center(a),cb=center(b),sides=["top","right","bottom","left"];
-  const vector={top:{x:0,y:-1},right:{x:1,y:0},bottom:{x:0,y:1},left:{x:-1,y:0}};
-  const obstacles=d.elements.filter(e=>e.id!==a.id&&e.id!==b.id&&e.type!=="connector"&&e.type!=="lane");
-  const stub=24;
-  const compact=points=>{
-    const unique=points.filter((p,i)=>i===0||Math.abs(p.x-points[i-1].x)>.5||Math.abs(p.y-points[i-1].y)>.5);
-    return unique.filter((p,i,all)=>i===0||i===all.length-1||!((Math.abs(p.x-all[i-1].x)<.5&&Math.abs(p.x-all[i+1].x)<.5)||(Math.abs(p.y-all[i-1].y)<.5&&Math.abs(p.y-all[i+1].y)<.5)));
-  };
-  const blocked=(p1,p2,o)=>{
-    const pad=12,left=o.x-pad,right=o.x+(o.width||220)+pad,top=o.y-pad,bottom=o.y+(o.height||190)+pad;
-    if(Math.abs(p1.y-p2.y)<.5)return p1.y>top&&p1.y<bottom&&Math.max(Math.min(p1.x,p2.x),left)<Math.min(Math.max(p1.x,p2.x),right);
-    if(Math.abs(p1.x-p2.x)<.5)return p1.x>left&&p1.x<right&&Math.max(Math.min(p1.y,p2.y),top)<Math.min(Math.max(p1.y,p2.y),bottom);
-    return true;
-  };
-  const length=pts=>pts.slice(1).reduce((sum,p,i)=>sum+Math.abs(p.x-pts[i].x)+Math.abs(p.y-pts[i].y),0);
-  let best=null;
-  for(const fromSide of sides)for(const toSide of sides)for(const horizontalFirst of [true,false]){
-    const start=connectionPoint(a,fromSide),end=connectionPoint(b,toSide);
-    const p1={x:start.x+vector[fromSide].x*stub,y:start.y+vector[fromSide].y*stub};
-    const p4={x:end.x+vector[toSide].x*stub,y:end.y+vector[toSide].y*stub};
-    const bend=horizontalFirst?{x:p4.x,y:p1.y}:{x:p1.x,y:p4.y};
-    const pts=compact([start,p1,bend,p4,end]);
-    let collisions=0;
-    for(let i=1;i<pts.length;i++)for(const obstacle of obstacles)if(blocked(pts[i-1],pts[i],obstacle))collisions++;
-    const toward={x:cb.x-ca.x,y:cb.y-ca.y};
-    const sourceDot=vector[fromSide].x*toward.x+vector[fromSide].y*toward.y;
-    const targetDot=vector[toSide].x*(-toward.x)+vector[toSide].y*(-toward.y);
-    const directionPenalty=(sourceDot<0?1:0)+(targetDot<0?1:0);
-    const score=collisions*100000+directionPenalty*900+length(pts)+Math.max(0,pts.length-2)*7;
-    if(!best||score<best.score)best={pts,score};
-  }
-  if(!best)return null;
-  const dPath=best.pts.map((p,i)=>`${i?"L":"M"} ${p.x} ${p.y}`).join(" ");
-  let label=null,maxLength=-1;
-  for(let i=1;i<best.pts.length;i++){
-    const p1=best.pts[i-1],p2=best.pts[i],segLength=Math.abs(p2.x-p1.x)+Math.abs(p2.y-p1.y);
-    if(segLength>maxLength){maxLength=segLength;label={x:(p1.x+p2.x)/2+(Math.abs(p1.x-p2.x)<1?8:0),y:(p1.y+p2.y)/2-(Math.abs(p1.y-p2.y)<1?8:0),anchor:Math.abs(p1.x-p2.x)<1?"start":"middle"};}
-  }
-  return{dPath,label};
-}
 function drawConnections(d) {
   const svg=document.getElementById("connections");if(!svg)return;
   const lines=d.elements.filter(e=>e.type==="connector");
@@ -685,11 +617,12 @@ function drawConnections(d) {
   if(currentDiagram()?.id===d.id)updateMinimap(d);
 }
 async function getMermaid() {
-  if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "linear", htmlLabels: true } }); return module.default; });
+  if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "linear", htmlLabels: true }, sequence: { wrap:true, useMaxWidth:false } }); return module.default; });
   return mermaidPromise;
 }
 function serializeMermaid(task){const result=mermaidQueue.then(task,task);mermaidQueue=result.then(()=>undefined,()=>undefined);return result;}
 function normalizeMermaidSource(source) {
+  if(/^\s*sequenceDiagram\b/m.test(String(source)))return String(source).replace(/\r\n?/g,"\n");
   return String(source || "").replace(/\r\n?/g, "\n").replace(/([\]\)}])[ \t]+(?=[A-Za-z0-9_][A-Za-z0-9_.-]*\s*(?:\[|\(|\{|>))/g, "$1\n");
 }
 async function renderSvg(source, renderId) {
@@ -700,60 +633,17 @@ async function renderSvg(source, renderId) {
 
 async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
   const graph=await serializeMermaid(async()=>{
-    const mermaid=await getMermaid(),normalizedSource=normalizeMermaidSource(source),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizedSource),db=parsed.db||parsed.parser?.yy;
-    const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
-    if(!/flowchart|graph|swimlane/.test(diagramType)||!db?.getVertices||!db?.getEdges) throw new Error("A conversão editável aceita Mermaid flowchart, graph e swimlane. Outros tipos podem ser adicionados como cartão Mermaid no editor.");
-    const rawVertices=db.getVertices(),vertices=[...(rawVertices instanceof Map?rawVertices.values():Array.isArray(rawVertices)?rawVertices:Object.values(rawVertices||{}))].map(v=>({...v}));
-    const edges=Array.from(db.getEdges()||[]).map(e=>({...e}));
-    const groups=typeof db.getSubGraphs==="function"?(db.getSubGraphs()||[]).map(group=>({...group,nodes:[...(group.nodes||[])]})):[];
-    const direction=typeof db.getDirection==="function"?String(db.getDirection()||"TD").toUpperCase():"TD";
-    return {diagramType,vertices,edges,groups,direction};
+    const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizeMermaidSource(source));
+    return snapshotMermaid(parsed,plainMermaidLabel);
   });
-  const {vertices,edges,groups,direction}=graph;
-  if(!vertices.length)throw new Error("Não encontrei etapas neste fluxograma.");
-  const byKey=new Map(),elements=[],assigned=new Set();
-  for(const vertex of vertices){
-    const key=String(vertex.id),shape=mermaidShape(vertex.type),preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
-    const text=plainMermaidLabel(vertex.text||key);
-    const lines=Math.ceil(text.length/Math.max(12,Math.floor((preset.width-24)/7)));
-    const item={id:id(),type:"shape",shape,text,colorMode:"theme",sourceId:key,x:0,y:0,width:preset.width,height:Math.max(preset.height,lines*20+40)};
-    byKey.set(key,item);elements.push(item);
-  }
-  // Resolve membership from inner groups, then retain the source group order.
-  const membership=new Map();
-  for(const group of [...groups].sort((a,b)=>a.nodes.length-b.nodes.length)){
-    const members=group.nodes.map(String).filter(key=>byKey.has(key)&&!assigned.has(key));
-    membership.set(group,members);members.forEach(key=>assigned.add(key));
-  }
-  for(const group of groups){
-    const members=membership.get(group);if(!members.length)continue;
-    const lane={id:id(),type:"lane",name:plainMermaidLabel(group.title||group.id||"Raia"),x:0,y:0,width:760,height:230};
-    elements.push(lane);
-    for(const key of members)byKey.get(key).laneId=lane.id;
-  }
-  for(const edge of edges){
-    const from=byKey.get(String(edge.start)),to=byKey.get(String(edge.end));
-    if(from&&to)elements.push({id:id(),type:"connector",from:from.id,to:to.id,text:plainMermaidLabel(edge.text||""),stroke:edge.stroke});
-  }
-  const layoutDirection=({LR:"RIGHT",RL:"LEFT",BT:"UP"})[direction]||"DOWN";
-  return layoutElements(elements,layoutDirection,undefined,{x:60+offset.x,y:70+offset.y});
+  return nativeElements(graph,offset);
 }
 function convertMermaidCard(d,elementId){
   const card=d.elements.find(e=>e.id===elementId&&e.type==="mermaid");if(!card)return;
-  showConfirmDialog({title:"Converter para formas editáveis?",message:"O cartão será trocado por formas, raias e setas. O código original fica guardado no quadro.",confirmLabel:"Converter diagrama",onConfirm:async()=>{
+  showConfirmDialog({title:"Converter para formas editáveis?",message:"O cartão será convertido em um diagrama nativo editável. O código original fica guardado no quadro.",confirmLabel:"Converter diagrama",onConfirm:async()=>{
     try{const elements=await convertMermaidFlowchart(card.code,{x:(card.x||0)-60,y:(card.y||0)-70});d.elements=d.elements.filter(e=>e.id!==card.id);d.elements.push(...elements);d.sourceMermaid=card.code;touchDiagram(d);render();fitDiagramToView(d);toast("Diagrama convertido em itens editáveis");}
     catch(error){toast(error.message||"Não foi possível converter este fluxograma");}
   }});
-}
-function mermaidShape(type){
-  const shape=String(type||"rect").toLowerCase().replaceAll("_","-");
-  if(["diamond","diam","decision"].includes(shape))return "decision";
-  if(["stadium","terminator","pill","start","stop","circle","doublecircle","ellipse"].includes(shape))return "terminator";
-  if(["lean-right","lean-r","lean-left","lean-l","parallelogram","parallelogram-alt","manual-input"].includes(shape))return "io";
-  if(["cylinder","cyl","database","db","datastore"].includes(shape))return "database";
-  if(["document","doc","docs","lined-document"].includes(shape))return "document";
-  if(["subroutine","subproc","subprocess","processes"].includes(shape))return "subprocess";
-  return "process";
 }
 function plainMermaidLabel(value){
   const box=document.createElement("textarea");box.innerHTML=String(value).replaceAll("<br>"," ").replaceAll("<br/>"," ").replaceAll("<br />"," ").replace(/<[^>]*>/g,"");return box.value.trim();
@@ -776,10 +666,11 @@ function readDiagram(d){
   const inLane=e=>e.laneId===focus||(lane&&e.x>=lane.x+176&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height);
   const item=nodes.find(e=>e.id===selectedElement)||nodes.filter(e=>!lane||inLane(e)).sort((a,b)=>a.y-b.y||a.x-b.x)[0];
   const wrap=document.getElementById("canvasWrap");if(!item||!wrap)return;
-  currentScale=Math.min(1,(wrap.clientWidth-64)/(item.width||180),(wrap.clientHeight-64)/(item.height||105));
+  const readingWidth=item.type==="sequence"?Math.min(item.width,760):(item.width||180),readingHeight=item.type==="sequence"?Math.min(item.height,460):(item.height||105);
+  currentScale=Math.min(1,(wrap.clientWidth-64)/readingWidth,(wrap.clientHeight-64)/readingHeight);
   currentScale=Math.max(MIN_SCALE,currentScale);
-  pan.x=wrap.clientWidth/2-(item.x+(item.width||180)/2)*currentScale;
-  pan.y=wrap.clientHeight/2-(item.y+(item.height||105)/2)*currentScale;applyTransform();
+  pan.x=wrap.clientWidth/2-(item.x+readingWidth/2)*currentScale;
+  pan.y=wrap.clientHeight/2-(item.y+readingHeight/2)*currentScale;applyTransform();
 }
 function minimapProjection(d){
   const bounds=diagramBounds(d.elements);if(!bounds)return null;
@@ -802,6 +693,7 @@ function moveFromMinimap(event,d){
 }
 async function organizeDiagram(d){
   if(layoutBusy)return;
+  if(!d.elements.some(e=>e.type==="shape")){for(const e of d.elements.filter(e=>e.type==="sequence")){const size=sequenceGeometry(e.model);e.width=size.width;e.height=size.height+40;}touchDiagram(d);render();fitDiagramToView(d);toast("Sequência organizada pela ordem das mensagens");return;}
   layoutBusy=true;const button=document.getElementById("organizeFlow");button.disabled=true;button.textContent="Organizando…";
   const before=JSON.stringify(d.elements),direction=document.getElementById("flowDirection").value;
   try{
@@ -827,6 +719,66 @@ function touchDiagram(d) {
   const status = document.getElementById("saveStatus"); if (status) status.innerHTML = "<i></i> Salvando…";
   const count = document.querySelector(".bottom-bar span:nth-child(2)"); if (count) count.textContent = itemSummary(d);
 }
+function editSequence(d,elementId){
+  const existing=d.elements.find(e=>e.id===elementId&&e.type==='sequence');
+  let draft=structuredClone(existing?.model||{participants:[{id:'cliente',name:'Cliente',kind:'actor'},{id:'app',name:'Aplicativo',kind:'participant'}],events:[{id:id(),kind:'SOLID',from:'cliente',to:'app',text:'Solicitar serviço'}]});
+  let title=existing?.title||'Diagrama de sequência';
+  const root=document.getElementById('modalRoot'),messageKinds=['SOLID','DOTTED','SOLID_OPEN','DOTTED_OPEN','SOLID_CROSS','DOTTED_CROSS','SOLID_POINT','DOTTED_POINT','BIDIRECTIONAL_SOLID','BIDIRECTIONAL_DOTTED'];
+  const labels={SOLID:'Chamada',DOTTED:'Resposta',SOLID_OPEN:'Seta aberta',DOTTED_OPEN:'Resposta aberta',SOLID_CROSS:'Interrupção',DOTTED_CROSS:'Interrupção pontilhada',SOLID_POINT:'Ponto',DOTTED_POINT:'Ponto pontilhado',BIDIRECTIONAL_SOLID:'Bidirecional',BIDIRECTIONAL_DOTTED:'Bidirecional pontilhada',NOTE:'Nota'};
+  const renderDialog=()=>{
+    const options=value=>draft.participants.map(p=>`<option value="${escapeHtml(p.id)}" ${value===p.id?'selected':''}>${escapeHtml(p.name||p.id)}</option>`).join('');
+    root.innerHTML=`<div class="modal-backdrop" id="sequenceBackdrop"><section class="modal sequence-modal" role="dialog" aria-modal="true" aria-labelledby="sequenceModalTitle"><div class="modal-head"><div><h2 id="sequenceModalTitle">Editar sequência</h2><p>Participantes em colunas. Mensagens na ordem em que acontecem.</p></div><button class="icon-button" data-close-sequence aria-label="Fechar">×</button></div><div class="sequence-editor-body"><label class="field-label">Título<input class="text-input" id="sequenceTitle" value="${escapeHtml(title)}"/></label><h3>Participantes</h3><div class="sequence-participants">${draft.participants.map((p,i)=>`<label>${escapeHtml(p.id)}<input class="text-input" data-participant="${i}" value="${escapeHtml(p.name)}" aria-label="Nome de ${escapeHtml(p.id)}"/></label>`).join('')}</div><button class="button secondary" id="sequenceAddParticipant">Adicionar participante</button><h3>Mensagens e blocos</h3><div class="sequence-events">${draft.events.map((e,i)=>`<div class="sequence-event"><span class="sequence-index">${i+1}</span>${messageKinds.includes(e.kind)?`<select data-event-kind="${i}" aria-label="Tipo da mensagem ${i+1}">${messageKinds.map(k=>`<option value="${k}" ${e.kind===k?'selected':''}>${labels[k]}</option>`).join('')}</select>`:`<strong>${escapeHtml(labels[e.kind]||e.kind.replaceAll('_',' ').toLowerCase())}</strong>`}${messageKinds.includes(e.kind)||e.kind==='NOTE'?`<select data-event-from="${i}" aria-label="Origem ${i+1}">${options(e.from)}</select><span>→</span><select data-event-to="${i}" aria-label="Destino ${i+1}">${options(e.to)}</select>`:''}${e.kind.endsWith('_END')||e.kind==='AUTONUMBER'||e.kind==='ACTIVE_START'?'':`<input class="text-input" data-event-text="${i}" value="${escapeHtml(e.text)}" aria-label="Texto do evento ${i+1}"/>`}<div class="sequence-row-actions"><button class="icon-button" data-sequence-insert="${i}" title="Inserir mensagem antes">＋</button>${messageKinds.includes(e.kind)||e.kind==='NOTE'?`<button class="icon-button" data-sequence-up="${i}" title="Mover para cima" ${i?'':'disabled'}>↑</button><button class="icon-button" data-sequence-remove="${i}" title="Excluir mensagem">×</button>`:''}</div></div>`).join('')}</div><div class="sequence-add-actions"><button class="button secondary" id="sequenceAddMessage">Adicionar mensagem</button><button class="button secondary" id="sequenceAddNote">Adicionar nota</button><button class="button secondary" id="sequenceAddAlt">Adicionar alt/else</button><button class="button secondary" id="sequenceAddLoop">Adicionar loop</button></div><details><summary>Prévia</summary><div id="sequencePreview" class="sequence-preview"></div></details><p id="sequenceValidation" role="status"></p></div><div class="modal-foot"><span>O código importado é preservado como referência.</span><div><button class="button secondary" data-close-sequence>Cancelar</button><button class="button primary" id="saveSequence">Salvar sequência</button></div></div></section></div>`;
+    const preview=()=>{try{validateSequence(draft);root.querySelector('#sequencePreview').innerHTML=sequenceSvg(draft,getTheme(d.themeId),'preview-seq');root.querySelector('#sequenceValidation').textContent='Sequência válida';root.querySelector('#saveSequence').disabled=false;}catch(error){root.querySelector('#sequenceValidation').textContent=error.message;root.querySelector('#saveSequence').disabled=true;}};
+    root.querySelectorAll('[data-close-sequence]').forEach(b=>b.onclick=closeModal);root.querySelector('#sequenceBackdrop').onclick=e=>{if(e.target.id==='sequenceBackdrop')closeModal();};
+    root.querySelector('#sequenceTitle').oninput=e=>title=e.target.value;
+    root.querySelectorAll('[data-participant]').forEach(input=>input.oninput=()=>{draft.participants[Number(input.dataset.participant)].name=input.value;preview();});
+    for(const [attr,prop] of [['text','text'],['from','from'],['to','to'],['kind','kind']])root.querySelectorAll(`[data-event-${attr}]`).forEach(input=>input.addEventListener(input.tagName==='SELECT'?'change':'input',()=>{draft.events[Number(input.getAttribute('data-event-'+attr))][prop]=input.value;preview();}));
+    const newMessage=()=>({id:id(),kind:'SOLID',from:draft.participants[0].id,to:draft.participants[Math.min(1,draft.participants.length-1)].id,text:'Nova mensagem'});
+    const redraw=action=>{action();renderDialog();};
+    root.querySelector('#sequenceAddParticipant').onclick=()=>redraw(()=>draft.participants.push({id:'p-'+id().slice(0,8),name:'Novo participante',kind:'participant'}));
+    root.querySelector('#sequenceAddMessage').onclick=()=>redraw(()=>draft.events.push(newMessage()));
+    root.querySelector('#sequenceAddNote').onclick=()=>redraw(()=>draft.events.push({...newMessage(),kind:'NOTE',text:'Nova nota',placement:2}));
+    root.querySelector('#sequenceAddAlt').onclick=()=>redraw(()=>draft.events.push({id:id(),kind:'ALT_START',text:'Condição'},newMessage(),{id:id(),kind:'ALT_ELSE',text:'Outra condição'},newMessage(),{id:id(),kind:'ALT_END',text:''}));
+    root.querySelector('#sequenceAddLoop').onclick=()=>redraw(()=>draft.events.push({id:id(),kind:'LOOP_START',text:'Enquanto necessário'},newMessage(),{id:id(),kind:'LOOP_END',text:''}));
+    root.querySelectorAll('[data-sequence-insert]').forEach(b=>b.onclick=()=>redraw(()=>draft.events.splice(Number(b.dataset.sequenceInsert),0,newMessage())));
+    root.querySelectorAll('[data-sequence-remove]').forEach(b=>b.onclick=()=>redraw(()=>draft.events.splice(Number(b.dataset.sequenceRemove),1)));
+    root.querySelectorAll('[data-sequence-up]').forEach(b=>b.onclick=()=>redraw(()=>{const i=Number(b.dataset.sequenceUp);[draft.events[i-1],draft.events[i]]=[draft.events[i],draft.events[i-1]];}));
+    root.querySelector('#saveSequence').onclick=()=>{try{const model=validateSequence(draft),size=sequenceGeometry(model);const item=existing||{id:id(),type:'sequence',x:80,y:80};Object.assign(item,{title:title.trim()||'Sequência',model,width:size.width,height:size.height+40});if(!existing)d.elements.push(item);touchDiagram(d);closeModal();render();fitDiagramToView(d);toast('Sequência salva');}catch(error){root.querySelector('#sequenceValidation').textContent=error.message;}};
+    preview();
+  };
+  renderDialog();
+}
+
+async function exportSnapshot(d,scope,transparent){
+  const snapshot=structuredClone(d),mermaid={};
+  if(scope!=='overview')for(const e of exportElements(snapshot.elements,scope).filter(e=>e.type==='mermaid')){
+    const native=await serializeMermaid(async()=>{
+      const m=await getMermaid();
+      try{m.initialize({startOnLoad:false,securityLevel:'strict',theme:'default',htmlLabels:false,flowchart:{htmlLabels:false,curve:'linear'},sequence:{wrap:true,useMaxWidth:false}});return (await m.render('export-'+id(),normalizeMermaidSource(e.code))).svg;}
+      finally{m.initialize({startOnLoad:false,securityLevel:'strict',theme:'default',flowchart:{htmlLabels:true,curve:'linear'},sequence:{wrap:true,useMaxWidth:false}});}
+    });
+    mermaid[e.id]=portableMermaid(native,'file-'+e.id);
+    const original=snapshot.elements.find(n=>n.id===e.id),size=document.querySelector(`[data-element="${e.id}"]`);if(size){original.height=size.offsetHeight;original.width=size.offsetWidth;}
+  }
+  const key=geometryKey(snapshot.elements),connections=snapshot.elements.filter(e=>e.type==='connector').flatMap(e=>{const route=routeConnection(e,snapshot,key);return route?[{...e,...route}]:[];});
+  return buildDiagramSvg(snapshot,{scope,transparent,theme:getTheme(d.themeId),connections,mermaid});
+}
+function showExportModal(d){
+  const root=document.getElementById('modalRoot'),lanes=d.elements.filter(e=>e.type==='lane');let previewUrl,revision=0,result;
+  root.innerHTML=`<div class="modal-backdrop" id="exportBackdrop"><section class="modal export-modal" role="dialog" aria-modal="true" aria-labelledby="exportTitle"><div class="modal-head"><div><h2 id="exportTitle">Exportar diagrama</h2><p>Salve um arquivo com textos, formas e conexões.</p></div><button class="icon-button" data-close-export aria-label="Fechar">×</button></div><div class="export-body"><div class="export-fields"><label class="field-label">Formato<select class="text-input" id="exportFormat"><option value="png">PNG</option><option value="svg">SVG</option></select></label><label class="field-label">Conteúdo<select class="text-input" id="exportScope"><option value="full">Diagrama completo</option>${lanes.length?'<option value="overview">Visão geral por fases</option>':''}${lanes.map(l=>`<option value="${escapeHtml(l.id)}">Fase: ${escapeHtml(l.name)}</option>`).join('')}</select></label><label class="field-label">Fundo<select class="text-input" id="exportBackground"><option value="white">Branco</option><option value="transparent">Transparente</option></select></label><label class="field-label" id="exportQualityField">Resolução<select class="text-input" id="exportQuality"><option value="2">2×</option><option value="1">1×</option></select></label></div><div class="export-preview"><img id="exportPreview" alt="Prévia do arquivo exportado"/></div><p id="exportStatus" role="status">Preparando prévia…</p><p class="export-help">SVG mantém a nitidez em qualquer tamanho. Exportar uma fase inclui suas etapas e conexões internas.</p></div><div class="modal-foot"><span></span><div><button class="button secondary" data-close-export>Cancelar</button><button class="button primary" id="downloadExport" disabled>Baixar arquivo</button></div></div></section></div>`;
+  const dialog=root.querySelector('.export-modal'),button=root.querySelector('#downloadExport'),status=root.querySelector('#exportStatus');
+  const close=()=>{revision++;if(previewUrl)URL.revokeObjectURL(previewUrl);document.removeEventListener('keydown',keyHandler);closeModal();};
+  const keyHandler=e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const fields=[...dialog.querySelectorAll('button:not(:disabled),select')].filter(n=>n.offsetParent!==null),first=fields[0],last=fields.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};
+  document.addEventListener('keydown',keyHandler);root.querySelectorAll('[data-close-export]').forEach(b=>b.onclick=close);root.querySelector('#exportBackdrop').onclick=e=>{if(e.target.id==='exportBackdrop')close();};
+  const scope=root.querySelector('#exportScope'),format=root.querySelector('#exportFormat'),quality=root.querySelector('#exportQuality'),background=root.querySelector('#exportBackground');
+  if(overviewVisible&&lanes.length)scope.value='overview';else if(document.getElementById('focusLane')?.value)scope.value=document.getElementById('focusLane').value;
+  const dimensions=()=>{root.querySelector('#exportQualityField').hidden=format.value==='svg';if(!result)return;const size=pngDimensions(result.width,result.height,Number(quality.value));status.textContent=format.value==='svg'?`${result.width} × ${result.height} · SVG vetorial`:`${size.width} × ${size.height} px${size.reduced?' · Resolução ajustada para este diagrama grande. SVG preserva todos os detalhes.':''}`;};
+  const prepare=async()=>{const ticket=++revision;button.disabled=true;result=null;status.textContent='Preparando prévia…';try{const next=await exportSnapshot(d,scope.value,background.value==='transparent');if(ticket!==revision||!dialog.isConnected)return;result=next;if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=URL.createObjectURL(new Blob([result.svg],{type:'image/svg+xml'}));root.querySelector('#exportPreview').src=previewUrl;button.disabled=false;dimensions();}catch(error){if(ticket===revision&&dialog.isConnected)status.textContent=error.message||'Não foi possível preparar este arquivo.';}};
+  scope.onchange=prepare;background.onchange=prepare;format.onchange=dimensions;quality.onchange=dimensions;
+  button.onclick=async()=>{if(!result)return;button.disabled=true;status.textContent='Gerando arquivo…';try{await downloadDiagram(result,{format:format.value,quality:Number(quality.value),filename:exportFilename(diagramTitle(d),scope.value==='overview'?'fases':scope.value==='full'?'':exportFilename(lanes.find(l=>l.id===scope.value)?.name||'fase'))});if(dialog.isConnected){toast('Arquivo exportado');close();}}catch(error){if(dialog.isConnected){status.textContent=error.message;button.disabled=false;}}};
+  prepare();format.focus();
+}
+
 function publish(d) {
   const payload = base64UrlEncode(JSON.stringify({ title: diagramTitle(d), themeId:d.themeId||DEFAULT_THEME_ID, elements: d.elements }));
   const url = `${location.origin}${location.pathname}#share=${payload}`;
@@ -841,7 +793,7 @@ function renderShared() {
   try {
     const encoded = new URLSearchParams(location.hash.slice(1)).get("share");
     const data = JSON.parse(base64UrlDecode(encoded));
-    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap" style="${themeStyle(data.themeId)}"><div class="shared-canvas" id="sharedCanvas">${data.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector"&&e.type!=="lane").map(renderElement).join("")}</div></div></main></div>`;
+    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap" style="${themeStyle(data.themeId)}"><div class="shared-canvas" id="sharedCanvas">${data.elements.filter(e=>e.type==="lane").map(e=>renderElement(e,data.themeId)).join("")}<svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector"&&e.type!=="lane").map(e=>renderElement(e,data.themeId)).join("")}</div></div></main></div>`;
     data.elements.filter(e => e.type === "sticky").forEach(e => { const n = document.querySelector(`[data-text="${e.id}"]`); if (n) { n.disabled = true; n.readOnly = true; } });
     drawConnections({ elements: data.elements }); renderAllMermaid({ elements: data.elements });
   } catch { app.innerHTML = `<div class="share-error"><h1>Este link não parece válido</h1><a href="${location.pathname}">Abrir VLI Diagrams</a></div>`; }

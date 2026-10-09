@@ -61,3 +61,9 @@ test("self loops, parallel edges, disconnected nodes and reverse directions",asy
     const changed=structuredClone(out);changed[0].x+=1;assert.notEqual(geometryKey(changed),geometryKey(out));
   }
 });
+
+test('cycle inside a phase with an edge to an ungrouped step',async()=>{
+  const input=[{id:'lane',type:'lane',name:'Fase',x:0,y:0,width:500,height:200},node('a','lane'),node('b','lane'),node('c'),edge('ab','a','b'),edge('bc','b','c','Sim'),edge('ba','b','a','Não')];
+  const result=await layoutElements(input,'DOWN',new ELK());
+  assertGeometry(result);assert.deepEqual(result.map(e=>e.id),input.map(e=>e.id));
+});

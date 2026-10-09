@@ -1,3 +1,4 @@
+import { exportToolResult } from "../lib/render-diagram.js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { validBearer } from "../lib/auth.js";
@@ -51,7 +52,7 @@ function makeHandler(appOrigin) {
     state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("create_diagram_from_mermaid", {
-    description: "Cria um diagrama VLI a partir do código Mermaid. Fluxogramas são convertidos automaticamente em formas, raias e conectores editáveis na próxima abertura do VLI; outros tipos permanecem renderizados como Mermaid.",
+    description: "Cria um diagrama VLI a partir do código Mermaid. Fluxogramas são convertidos em formas, raias e conectores; sequenceDiagram vira uma sequência nativa com participantes e mensagens editáveis na próxima abertura do VLI. Use rótulos curtos, identificadores estáveis, aspas nos rótulos de fluxograma com pontuação e participantes declarados em ordem. Outros tipos permanecem como cartão Mermaid.",
     inputSchema: z.object({ title: z.string().min(1).max(160), mermaid: z.string().min(1).max(50000), folder_id: z.string().optional() })
   }, async ({ title, mermaid, folder_id }) => {
     const state = await readWorkspace();
@@ -68,6 +69,15 @@ function makeHandler(appOrigin) {
     if (!diagram) return text("Diagrama não encontrado.");
     diagram.title = title?.trim() || diagram.title; diagram.elements = [{ id: makeId(), type: "mermaid", title: diagram.title, code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }]; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
     await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Código Mermaid atualizado." });
+  });
+  server.registerTool("export_diagram", {
+    description: "Exporta um diagrama salvo em PNG ou SVG sem abrir o app. Aceita fluxogramas e sequenceDiagram de origem, formas nativas e sequências editáveis. Retorna nome, dimensões e URL de download protegida. PNG inclui imagem no retorno MCP quando tem até 2 MB; SVG inclui o arquivo vetorial como recurso. scope pode ser full, overview ou o ID de uma raia. A exportação não modifica o diagrama.",
+    inputSchema: z.object({ diagram_id:z.string(), format:z.enum(["png","svg"]).default("png"), scope:z.string().default("full"), transparent:z.boolean().default(false), quality:z.union([z.literal(1),z.literal(2)]).default(2) })
+  }, async ({diagram_id,...options}) => {
+    const diagram=(await readWorkspace()).diagrams.find(d=>d.id===diagram_id);
+    if(!diagram)return {isError:true,content:[{type:"text",text:"Diagrama não encontrado."}]};
+    try{return await exportToolResult(diagram,appOrigin,options);}
+    catch(error){return {isError:true,content:[{type:"text",text:error.message||"Não foi possível exportar o diagrama."}]};}
   });
   server.registerTool("rename_diagram", {
     description: "Renomeia um diagrama pelo ID.", inputSchema: z.object({ diagram_id: z.string(), title: z.string().min(1).max(160) })
@@ -97,3 +107,4 @@ export default { async fetch(request) {
   if (!validBearer(request)) return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
   return makeHandler(new URL(request.url).origin).fetch(request, { authInfo: { token: "vli-mcp-token", clientId: "notion-agent", scopes: [] } });
 } };
+
