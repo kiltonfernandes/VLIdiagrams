@@ -1,5 +1,10 @@
 const STORAGE_KEY = "vli-diagrams-v1";
 const colors = ["#ffe58f", "#ffbdbd", "#c7f2c2", "#c8e4ff", "#e7d1ff", "#ffd8a8"];
+const DEFAULT_THEME_ID="paper";
+const diagramThemes=[["paper","Papel","#fbfcfe","#e6eaf0","#fff","#f3f5f8","#dbe1e8","#253247","#63748b","#5273a8","#c48620","#34846a","#36809a","#7b63a7"],["ocean","Oceano","#f7fbff","#dceaf5","#fff","#eaf4fb","#cfdfed","#17324d","#47708b","#2877a7","#d08a2d","#258877","#3e82a2","#557cb7"],["lavender","Lavanda","#faf9ff","#e8e2f4","#fff","#f3effa","#ded5ec","#302b48","#71658c","#7661bd","#bf8734","#498c79","#5188a0","#9b649d"],["forest","Floresta","#f8fbf8","#dfeae1","#fff","#edf5ee","#d4e2d6","#24392b","#55705e","#4d8060","#b38630","#26845b","#438279","#757f4f"],["sunset","Pôr do sol","#fffaf7","#f2e4dc","#fff","#fff0e7","#ead8cc","#493126","#806257","#c06b49","#cb862c","#518878","#55839a","#9b6479"],["sand","Areia","#fcfaf6","#ece5d9","#fff","#f5f0e6","#e3d9c8","#3e392f","#766d5d","#8b7550","#bc762e","#557d63","#587d8a","#8f6a9b"],["slate","Ardósia","#f8fafc","#e3e8ee","#fff","#eef2f6","#d5dde6","#263341","#586777","#52687f","#bd8230","#43806c","#3d7b91","#7273a5"],["mint","Menta","#f6fcfa","#dbeee8","#fff","#e8f6f1","#cfe4dc","#203c37","#4e766d","#398677","#b27d2d","#268263","#397f93","#5e7caa"],["coral","Coral","#fff9f8","#f1e1df","#fff","#fdf0ee","#ead6d4","#442f32","#7b5d62","#b45e68","#c5862f","#438578","#4b8090","#8a648b"],["cobalt","Cobalto","#f7faff","#dfe7f6","#fff","#edf2fc","#d3def0","#253250","#596b8f","#3e65b6","#c1842a","#34836e","#367f9c","#8266b0"],["sage","Sálvia","#fafbf7","#e7eadc","#fff","#f2f4e9","#dce1d0","#34392c","#68705c","#748655","#b98131","#448265","#4c8290","#8c6a91"],["berry","Amora","#fcf8fc","#eee1eb","#fff","#f7edf5","#e5d4e2","#402b3f","#765e75","#95629b","#c1842a","#43856e","#4f8096","#a34f79"],["ice","Gelo","#f7fcfd","#dcecef","#fff","#eaf5f6","#cee1e4","#21373d","#56747a","#398194","#c2862b","#318274","#357f90","#687fa6"],["terracotta","Terracota","#fcf8f5","#efe2d8","#fff","#f8eee6","#e4d4c7","#423329","#796557","#a66e4e","#c0812b","#4b826d","#4e7d89","#876b98"],["meadow","Campo","#f8fbf7","#e1ecdf","#fff","#eef6eb","#d3e3d0","#2b392b","#5d725a","#4d8c57","#bd8230","#368264","#488295","#8074a0"],["midnight","Noite clara","#f4f7fb","#dfe5ef","#fff","#e8edf5","#d0d9e6","#202a3b","#52627b","#4d68a3","#bb812b","#37806b","#3d7894","#7865a5"],["peach","Pêssego","#fffaf6","#f3e6dc","#fff","#fff1e6","#ead9ca","#46372f","#78685d","#bb7650","#c38a31","#51856d","#548297","#916d9e"],["orchid","Orquídea","#fbf9fd","#e9e3f0","#fff","#f4eff8","#ded5e8","#352b41","#70627c","#8559a5","#c08831","#498575","#4e8092","#a16083"],["lagoon","Lagoa","#f6fbfa","#dcebe8","#fff","#eaf5f2","#ccdfda","#203b3b","#52716f","#348b89","#bc812f","#2f7e68","#397f9b","#716ba2"],["contrast","Alto contraste","#fff","#e5e7eb","#fff","#f1f3f5","#cbd0d6","#111827","#4b5563","#1d4ed8","#b45309","#047857","#0369a1","#6d28d9"]].map(([id,name,canvas,grid,lane,laneHeader,border,ink,connector,process,decision,terminal,data,subprocess])=>({id,name,canvas,grid,lane,laneHeader,border,ink,connector,process,decision,terminal,data,subprocess}));
+function getTheme(themeId=DEFAULT_THEME_ID){return diagramThemes.find(theme=>theme.id===themeId)||diagramThemes[0];}
+function themeStyle(themeId=DEFAULT_THEME_ID){const t=getTheme(themeId);return `--diagram-canvas:${t.canvas};--diagram-grid:${t.grid};--diagram-lane:${t.lane};--diagram-lane-header:${t.laneHeader};--diagram-line:${t.border};--diagram-ink:${t.ink};--diagram-connector:${t.connector};--theme-process:${t.process};--theme-decision:${t.decision};--theme-terminal:${t.terminal};--theme-data:${t.data};--theme-subprocess:${t.subprocess};`;}
+
 const flowNodeTypes = [
   { type:"process", label:"Novo passo", symbol:"▭", width:180, height:105 },
   { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:125 },
@@ -85,10 +90,10 @@ function renderEditor(d) {
         <button class="tool wide" id="addShape" title="Escolher forma"><span class="tool-shape">◇</span><span>Forma</span></button>
         <button class="tool wide" id="addLane" title="Adicionar raia de responsabilidade"><span class="tool-lane">▤</span><span>Raia</span></button>
         <button class="tool wide" id="connectItems" title="Conectar dois itens"><span>⤳</span><span>Conectar</span></button>
-        <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button>
+        <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button><button class="tool wide" id="themeButton" title="Escolher tema do diagrama"><span class="tool-theme">◉</span><span>Tema</span></button>
         <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn">＋</button><button class="icon-button" id="fitCanvas" title="Ajustar à tela">⛶</button></div>
       </div>
-      <div class="canvas-wrap" id="canvasWrap"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Organize as etapas nas raias e conecte os pontos do processo</div></div>
+      <div class="canvas-wrap" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(renderElement).join("")}</div></div><div class="canvas-hint" id="canvasHint">Organize as etapas nas raias e conecte os pontos do processo</div></div>
       <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${itemSummary(d)}</span></div>
     </div>`;
 }
@@ -97,7 +102,7 @@ function renderElement(e) {
   if (e.type === "connector") return "";
   if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>RAIA</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
-  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;--shape-color:${e.color || "#d9d3ff"}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${e.color};` : ""}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
 
@@ -120,7 +125,7 @@ function bindShell() {
 }
 
 function createDiagram(folderId = null) {
-  const d = { id: id(), title: "Novo diagrama", folderId, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
+  const d = { id: id(), title: "Novo diagrama", folderId, themeId: DEFAULT_THEME_ID, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
   state.diagrams.unshift(d); state.activeDiagramId = d.id; persist(); render();
   const input = document.getElementById("diagramTitle"); input?.focus(); input?.select();
 }
@@ -205,6 +210,7 @@ function bindEditor(d) {
     toast(connectMode ? "Selecione dois itens para conectá-los" : "Modo de conexão encerrado");
   });
   document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal());
+  document.getElementById("themeButton").addEventListener("click", () => showThemePicker(d));
   document.getElementById("publishDiagram").addEventListener("click", () => publish(d));
   document.getElementById("moveDiagram").addEventListener("click", () => moveDiagramById(d));
   document.getElementById("diagramMenu").addEventListener("click", () => diagramMenu(d.id));
@@ -261,7 +267,7 @@ function addSticky(d, x = 100 + Math.random() * 140, y = 100 + Math.random() * 1
 }
 function addShape(d, shape = "process") {
   const preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
-  const item = { id:id(),type:"shape",shape,text:preset.label,color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x:240+Math.random()*120,y:130+Math.random()*120,width:preset.width,height:preset.height };
+  const item = { id:id(),type:"shape",shape,text:preset.label,colorMode:"theme",x:240+Math.random()*120,y:130+Math.random()*120,width:preset.width,height:preset.height };
   d.elements.push(item); touchDiagram(d); render(); document.querySelector(`[data-text="${item.id}"]`)?.focus();
 }
 function showShapePicker(d,anchor){
@@ -307,7 +313,7 @@ function addConnectedNode(d,fromId,side,type){
   let y=side==="bottom"?source.y+(source.height||105)+gap:side==="top"?source.y-preset.height-gap:source.y+((source.height||105)-preset.height)/2;
   const lane=d.elements.find(e=>e.type==="lane"&&source.x+(source.width||180)/2>=e.x+135&&source.x+(source.width||180)/2<=e.x+e.width&&source.y+(source.height||105)/2>=e.y&&source.y+(source.height||105)/2<=e.y+e.height);
   if(lane&&(side==="left"||side==="right"))y=Math.max(lane.y+12,Math.min(y,lane.y+lane.height-preset.height-12));
-  const next={id:id(),type:"shape",shape:type,text:preset.label,color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x,y,width:preset.width,height:preset.height};
+  const next={id:id(),type:"shape",shape:type,text:preset.label,colorMode:"theme",x,y,width:preset.width,height:preset.height};
   d.elements.push(next,{id:id(),type:"connector",from:source.id,to:next.id});selectedElement=null;touchDiagram(d);render();
 }
 function showMermaidModal(existing = null, options = {}) {
@@ -334,7 +340,7 @@ function showMermaidModal(existing = null, options = {}) {
       try {
         const elements = await convertMermaidFlowchart(code);
         const title = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
-        const d = { id:id(), title, folderId:null, elements, sourceMermaid:code, createdAt:Date.now(), updatedAt:Date.now() };
+        const d = { id:id(), title, folderId:null, themeId:DEFAULT_THEME_ID, elements, sourceMermaid:code, createdAt:Date.now(), updatedAt:Date.now() };
         state.diagrams.unshift(d); state.activeDiagramId=d.id; persist(); close(); render(); fitDiagramToView(d); toast("Fluxograma convertido em itens editáveis");
       } catch (error) {
         saveButton.disabled = false; saveButton.textContent = "Criar diagrama editável";
@@ -344,7 +350,7 @@ function showMermaidModal(existing = null, options = {}) {
     }
     let d = currentDiagram();
     if (!d) {
-      d = { id: id(), title: document.getElementById("mermaidTitleInput").value.trim() || "Novo diagrama", folderId: null, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
+      d = { id: id(), title: document.getElementById("mermaidTitleInput").value.trim() || "Novo diagrama", folderId: null, themeId:DEFAULT_THEME_ID, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
       state.diagrams.unshift(d); state.activeDiagramId = d.id;
     }
     const blockTitle = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
@@ -356,7 +362,22 @@ function showMermaidModal(existing = null, options = {}) {
 function editMermaid(d, elementId) { const el = d.elements.find(e => e.id === elementId); if (el) showMermaidModal(el); }
 function deleteElement(d, elementId) { d.elements = d.elements.filter(e => e.id !== elementId&&!(e.type==="connector"&&(e.from===elementId||e.to===elementId))); touchDiagram(d); render(); }
 function confirmDeleteElement(d,elementId){const item=d.elements.find(e=>e.id===elementId);if(!item)return;showConfirmDialog({title:"Excluir este item?",message:"Essa ação removerá o item e as conexões ligadas a ele.",confirmLabel:"Excluir item",onConfirm:()=>{d.elements=d.elements.filter(e=>e.id!==elementId&&!(e.type==="connector"&&(e.from===elementId||e.to===elementId)));selectedElement=null;touchDiagram(d);render();}});}
-function showColorMenu(d,elementId,anchor){const item=d.elements.find(e=>e.id===elementId);if(!item)return;const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();root.innerHTML=`<div class="action-menu-backdrop" id="actionMenuBackdrop"><div class="color-menu" id="colorMenu">${colors.map(color=>`<button data-color-choice="${color}" style="--swatch:${color}" aria-label="Selecionar cor" title="Selecionar cor"></button>`).join("")}</div></div>`;const menu=root.querySelector("#colorMenu");menu.style.left=`${Math.min(rect.left,window.innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(rect.bottom+5,window.innerHeight-menu.offsetHeight-8)}px`;root.querySelector("#actionMenuBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="actionMenuBackdrop")closeModal();});menu.querySelectorAll("[data-color-choice]").forEach(button=>button.addEventListener("click",()=>{item.color=button.dataset.colorChoice;closeModal();touchDiagram(d);render();}));}
+function showThemePicker(d){
+  let selected=d.themeId||DEFAULT_THEME_ID;
+  const root=document.getElementById("modalRoot");
+  const options=diagramThemes.map(theme=>`<button class="theme-option ${selected===theme.id?"selected":""}" data-theme-choice="${theme.id}" aria-pressed="${selected===theme.id}" style="${themeStyle(theme.id)}"><span class="theme-sample"><i></i><i></i><i></i></span><span class="theme-name">${theme.name}</span><span class="theme-swatches"><i style="--swatch:${theme.process}"></i><i style="--swatch:${theme.decision}"></i><i style="--swatch:${theme.terminal}"></i><i style="--swatch:${theme.data}"></i></span></button>`).join("");
+  root.innerHTML=`<div class="modal-backdrop" id="themeBackdrop"><section class="modal theme-modal" role="dialog" aria-modal="true" aria-labelledby="themeTitle"><div class="modal-head"><div><div class="eyebrow">APARÊNCIA DO QUADRO</div><h2 id="themeTitle">Escolha um tema</h2><p>Visualize as cores, selecione uma paleta e salve no diagrama.</p></div><button class="icon-button" data-close-theme aria-label="Fechar">×</button></div><div class="theme-grid">${options}</div><div class="modal-foot"><span>O tema escolhido fica salvo neste diagrama.</span><div><button class="button secondary" data-close-theme>Cancelar</button><button class="button primary" id="saveTheme">Salvar tema</button></div></div></section></div>`;
+  const close=()=>{root.innerHTML="";const canvas=document.getElementById("canvasWrap");if(canvas)canvas.style.cssText=themeStyle(d.themeId||DEFAULT_THEME_ID);};
+  root.querySelectorAll("[data-close-theme]").forEach(button=>button.addEventListener("click",close));
+  root.querySelector("#themeBackdrop").addEventListener("click",event=>{if(event.target.id==="themeBackdrop")close();});
+  root.querySelectorAll("[data-theme-choice]").forEach(button=>button.addEventListener("click",()=>{
+    selected=button.dataset.themeChoice;
+    root.querySelectorAll("[data-theme-choice]").forEach(option=>{const active=option.dataset.themeChoice===selected;option.classList.toggle("selected",active);option.setAttribute("aria-pressed",String(active));});
+    const canvas=document.getElementById("canvasWrap");if(canvas)canvas.style.cssText=themeStyle(selected);
+  }));
+  root.querySelector("#saveTheme").addEventListener("click",()=>{d.themeId=selected;touchDiagram(d);root.innerHTML="";render();toast(`Tema “${getTheme(selected).name}” aplicado`);});
+}
+function showColorMenu(d,elementId,anchor){const item=d.elements.find(e=>e.id===elementId);if(!item)return;const root=document.getElementById("modalRoot"),rect=anchor.getBoundingClientRect();root.innerHTML=`<div class="action-menu-backdrop" id="actionMenuBackdrop"><div class="color-menu" id="colorMenu">${colors.map(color=>`<button data-color-choice="${color}" style="--swatch:${color}" aria-label="Selecionar cor" title="Selecionar cor"></button>`).join("")}</div></div>`;const menu=root.querySelector("#colorMenu");menu.style.left=`${Math.min(rect.left,window.innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(rect.bottom+5,window.innerHeight-menu.offsetHeight-8)}px`;root.querySelector("#actionMenuBackdrop").addEventListener("pointerdown",ev=>{if(ev.target.id==="actionMenuBackdrop")closeModal();});menu.querySelectorAll("[data-color-choice]").forEach(button=>button.addEventListener("click",()=>{item.color=button.dataset.colorChoice;if(item.type==="shape")item.colorMode="custom";closeModal();touchDiagram(d);render();}));}
 
 function startDrag(ev, d, el) {
   if (ev.target.closest("button,textarea,input,[data-resize]")) return;
@@ -397,16 +418,71 @@ async function renderAllMermaid(d) {
     catch (error) { target.innerHTML = `<pre class="render-error">${escapeHtml(error.message || "Não foi possível renderizar este Mermaid")}</pre>`; }
   }
 }
+function connectionPoint(item,side){
+  const x=item.x,y=item.y,w=item.width||220,h=item.height||190;
+  if(item.shape==="decision"){
+    const insetX=w*.14,insetY=h*.14;
+    if(side==="top")return{x:x+w/2,y:y+insetY};
+    if(side==="bottom")return{x:x+w/2,y:y+h-insetY};
+    if(side==="left")return{x:x+insetX,y:y+h/2};
+    return{x:x+w-insetX,y:y+h/2};
+  }
+  if(side==="top")return{x:x+w/2,y};
+  if(side==="bottom")return{x:x+w/2,y:y+h};
+  if(side==="left")return{x,y:y+h/2};
+  return{x:x+w,y:y+h/2};
+}
+function routeConnection(line,d){
+  const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);
+  if(!a||!b)return null;
+  const center=e=>({x:e.x+(e.width||220)/2,y:e.y+(e.height||190)/2});
+  const ca=center(a),cb=center(b),sides=["top","right","bottom","left"];
+  const vector={top:{x:0,y:-1},right:{x:1,y:0},bottom:{x:0,y:1},left:{x:-1,y:0}};
+  const obstacles=d.elements.filter(e=>e.id!==a.id&&e.id!==b.id&&e.type!=="connector"&&e.type!=="lane");
+  const stub=24;
+  const compact=points=>{
+    const unique=points.filter((p,i)=>i===0||Math.abs(p.x-points[i-1].x)>.5||Math.abs(p.y-points[i-1].y)>.5);
+    return unique.filter((p,i,all)=>i===0||i===all.length-1||!((Math.abs(p.x-all[i-1].x)<.5&&Math.abs(p.x-all[i+1].x)<.5)||(Math.abs(p.y-all[i-1].y)<.5&&Math.abs(p.y-all[i+1].y)<.5)));
+  };
+  const blocked=(p1,p2,o)=>{
+    const pad=12,left=o.x-pad,right=o.x+(o.width||220)+pad,top=o.y-pad,bottom=o.y+(o.height||190)+pad;
+    if(Math.abs(p1.y-p2.y)<.5)return p1.y>top&&p1.y<bottom&&Math.max(Math.min(p1.x,p2.x),left)<Math.min(Math.max(p1.x,p2.x),right);
+    if(Math.abs(p1.x-p2.x)<.5)return p1.x>left&&p1.x<right&&Math.max(Math.min(p1.y,p2.y),top)<Math.min(Math.max(p1.y,p2.y),bottom);
+    return true;
+  };
+  const length=pts=>pts.slice(1).reduce((sum,p,i)=>sum+Math.abs(p.x-pts[i].x)+Math.abs(p.y-pts[i].y),0);
+  let best=null;
+  for(const fromSide of sides)for(const toSide of sides)for(const horizontalFirst of [true,false]){
+    const start=connectionPoint(a,fromSide),end=connectionPoint(b,toSide);
+    const p1={x:start.x+vector[fromSide].x*stub,y:start.y+vector[fromSide].y*stub};
+    const p4={x:end.x+vector[toSide].x*stub,y:end.y+vector[toSide].y*stub};
+    const bend=horizontalFirst?{x:p4.x,y:p1.y}:{x:p1.x,y:p4.y};
+    const pts=compact([start,p1,bend,p4,end]);
+    let collisions=0;
+    for(let i=1;i<pts.length;i++)for(const obstacle of obstacles)if(blocked(pts[i-1],pts[i],obstacle))collisions++;
+    const toward={x:cb.x-ca.x,y:cb.y-ca.y};
+    const sourceDot=vector[fromSide].x*toward.x+vector[fromSide].y*toward.y;
+    const targetDot=vector[toSide].x*(-toward.x)+vector[toSide].y*(-toward.y);
+    const directionPenalty=(sourceDot<0?1:0)+(targetDot<0?1:0);
+    const score=collisions*100000+directionPenalty*900+length(pts)+Math.max(0,pts.length-2)*7;
+    if(!best||score<best.score)best={pts,score};
+  }
+  if(!best)return null;
+  const dPath=best.pts.map((p,i)=>`${i?"L":"M"} ${p.x} ${p.y}`).join(" ");
+  let label=null,maxLength=-1;
+  for(let i=1;i<best.pts.length;i++){
+    const p1=best.pts[i-1],p2=best.pts[i],segLength=Math.abs(p2.x-p1.x)+Math.abs(p2.y-p1.y);
+    if(segLength>maxLength){maxLength=segLength;label={x:(p1.x+p2.x)/2+(Math.abs(p1.x-p2.x)<1?8:0),y:(p1.y+p2.y)/2-(Math.abs(p1.y-p2.y)<1?8:0),anchor:Math.abs(p1.x-p2.x)<1?"start":"middle"};}
+  }
+  return{dPath,label};
+}
 function drawConnections(d) {
-  const svg=document.getElementById("connections"); if(!svg)return;
+  const svg=document.getElementById("connections");if(!svg)return;
   const lines=d.elements.filter(e=>e.type==="connector");
-  svg.innerHTML=`<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#8275d8" /></marker></defs>`+lines.map(line=>{
-    const a=d.elements.find(e=>e.id===line.from),b=d.elements.find(e=>e.id===line.to);if(!a||!b)return "";
-    const aw=a.width||220,ah=a.height||190,bw=b.width||220,bh=b.height||190,ax=a.x+aw/2,ay=a.y+ah/2,bx=b.x+bw/2,by=b.y+bh/2;
-    const edge=(item,cx,cy,tx,ty)=>{const w=(item.width||220)/2,h=(item.height||190)/2,dx=tx-cx,dy=ty-cy;let scale;if(item.shape==="decision")scale=1/(Math.abs(dx)/w+Math.abs(dy)/h||1);else scale=1/(Math.max(Math.abs(dx)/w,Math.abs(dy)/h)||1);return{x:cx+dx*scale,y:cy+dy*scale};};
-    const from=edge(a,ax,ay,bx,by),to=edge(b,bx,by,ax,ay);
-    const mx=(from.x+to.x)/2,my=(from.y+to.y)/2,style=line.stroke==="dotted"?'stroke-dasharray="5 5"':line.stroke==="thick"?'stroke-width="3.5"':"";
-    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" marker-end="url(#arrowhead)" ${style}/>${line.text?`<text class="connector-label" x="${mx}" y="${my-7}" text-anchor="middle">${escapeHtml(line.text)}</text>`:""}`;
+  svg.innerHTML=`<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" style="fill:var(--diagram-connector,#63748b)" /></marker></defs>`+lines.map(line=>{
+    const route=routeConnection(line,d);if(!route)return "";
+    const style=line.stroke==="dotted"?'stroke-dasharray="5 5"':line.stroke==="thick"?'stroke-width="3"':"";
+    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="${route.dPath}" marker-end="url(#arrowhead)" ${style}/>${line.text?`<text class="connector-label" x="${route.label.x}" y="${route.label.y}" text-anchor="${route.label.anchor}">${escapeHtml(line.text)}</text>`:""}`;
   }).join("");
   svg.querySelectorAll("[data-connector]").forEach(path=>path.addEventListener("click",ev=>{ev.stopPropagation();selectedElement=path.dataset.connector;drawConnections(d);}));
 }
@@ -452,19 +528,19 @@ async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
     const vertex=byId.get(key),shape=mermaidShape(vertex.type),preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
     const label=plainMermaidLabel(vertex.text||key),width=preset.width,height=preset.height,nodeId=id();
     shapeCount[shape]=(shapeCount[shape]||0)+1;
-    const item={id:nodeId,type:"shape",shape,text:label,color:colors[(shapeCount[shape]-1)%colors.length],x,y,width,height};
+    const item={id:nodeId,type:"shape",shape,text:label,colorMode:"theme",x,y,width,height};
     elementByKey.set(key,item);elements.push(item);return item;
   };
   let freeNodesTop=90;
   if(laneGroups.length){
-    const laneX=60,laneWidth=Math.max(1500,(maxRank+1)*275+260);let laneY=70;
+    const laneX=60,laneWidth=Math.max(760,(maxRank+1)*255+230);let laneY=70;
     for(const group of laneGroups){
       const members=group.members.slice().sort((a,b)=>(ranks.get(a)-ranks.get(b))||a.localeCompare(b));
       const layerCounts=new Map();members.forEach(key=>layerCounts.set(ranks.get(key),(layerCounts.get(ranks.get(key))||0)+1));
       const laneHeight=Math.max(230,...[...layerCounts.values()].map(count=>count*150+90));
       elements.push({id:id(),type:"lane",name:group.name,x:laneX,y:laneY,width:laneWidth,height:laneHeight});
       const layerIndexes=new Map();
-      for(const key of members){const rank=ranks.get(key)||0,index=layerIndexes.get(rank)||0;layerIndexes.set(rank,index+1);const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];const count=layerCounts.get(rank)||1;const rowY=laneY+(laneHeight-(count*preset.height+(count-1)*18))/2+index*(preset.height+18);makeNode(key,laneX+175+rank*270,rowY);}
+      for(const key of members){const rank=ranks.get(key)||0,index=layerIndexes.get(rank)||0;layerIndexes.set(rank,index+1);const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];const count=layerCounts.get(rank)||1;const rowY=laneY+(laneHeight-(count*preset.height+(count-1)*18))/2+index*(preset.height+18);makeNode(key,laneX+185+rank*255,rowY);}
       laneY+=laneHeight+14;
     }
     freeNodesTop=laneY+20;
@@ -498,7 +574,7 @@ function plainMermaidLabel(value){
   const box=document.createElement("textarea");box.innerHTML=String(value).replaceAll("<br>"," ").replaceAll("<br/>"," ").replaceAll("<br />"," ").replace(/<[^>]*>/g,"");return box.value.trim();
 }
 function fitDiagramToView(d){
-  requestAnimationFrame(()=>{const wrap=document.getElementById("canvasWrap");if(!wrap)return;const items=d.elements.filter(e=>e.type!=="connector");if(!items.length)return;const left=Math.min(...items.map(e=>e.x)),top=Math.min(...items.map(e=>e.y)),right=Math.max(...items.map(e=>e.x+(e.width||180))),bottom=Math.max(...items.map(e=>e.y+(e.height||105))),width=right-left,height=bottom-top;currentScale=Math.max(.35,Math.min(1.1,(wrap.clientWidth-90)/width,(wrap.clientHeight-90)/height));pan.x=(wrap.clientWidth-width*currentScale)/2-left*currentScale;pan.y=(wrap.clientHeight-height*currentScale)/2-top*currentScale;applyTransform();});
+  requestAnimationFrame(()=>{const wrap=document.getElementById("canvasWrap");if(!wrap)return;const items=d.elements.filter(e=>e.type!=="connector");if(!items.length)return;const left=Math.min(...items.map(e=>e.x)),top=Math.min(...items.map(e=>e.y)),right=Math.max(...items.map(e=>e.x+(e.width||180))),bottom=Math.max(...items.map(e=>e.y+(e.height||105))),width=right-left,height=bottom-top;currentScale=Math.max(.45,Math.min(1.15,(wrap.clientWidth-72)/width,(wrap.clientHeight-72)/height));pan.x=(wrap.clientWidth-width*currentScale)/2-left*currentScale;pan.y=(wrap.clientHeight-height*currentScale)/2-top*currentScale;applyTransform();});
 }
 
 function touchDiagram(d) {
@@ -507,7 +583,7 @@ function touchDiagram(d) {
   const count = document.querySelector(".bottom-bar span:nth-child(2)"); if (count) count.textContent = itemSummary(d);
 }
 function publish(d) {
-  const payload = base64UrlEncode(JSON.stringify({ title: diagramTitle(d), elements: d.elements }));
+  const payload = base64UrlEncode(JSON.stringify({ title: diagramTitle(d), themeId:d.themeId||DEFAULT_THEME_ID, elements: d.elements }));
   const url = `${location.origin}${location.pathname}#share=${payload}`;
   showShareDialog(url);
 }
@@ -520,7 +596,7 @@ function renderShared() {
   try {
     const encoded = new URLSearchParams(location.hash.slice(1)).get("share");
     const data = JSON.parse(base64UrlDecode(encoded));
-    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap"><div class="shared-canvas" id="sharedCanvas">${data.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector"&&e.type!=="lane").map(renderElement).join("")}</div></div></main></div>`;
+    app.innerHTML = `<div class="shared-view"><header class="shared-top"><a href="${location.pathname}" class="brand mini-brand"><div class="brand-mark">V</div><strong>VLI Diagrams</strong></a><span>Visualização publicada</span></header><main><div class="shared-title"><div class="eyebrow">QUADRO PUBLICADO</div><h1>${escapeHtml(data.title)}</h1></div><div class="shared-canvas-wrap" style="${themeStyle(data.themeId)}"><div class="shared-canvas" id="sharedCanvas">${data.elements.filter(e=>e.type==="lane").map(renderElement).join("")}<svg class="connections" id="connections" width="5000" height="5000"></svg>${data.elements.filter(e=>e.type!=="connector"&&e.type!=="lane").map(renderElement).join("")}</div></div></main></div>`;
     data.elements.filter(e => e.type === "sticky").forEach(e => { const n = document.querySelector(`[data-text="${e.id}"]`); if (n) { n.disabled = true; n.readOnly = true; } });
     drawConnections({ elements: data.elements }); renderAllMermaid({ elements: data.elements });
   } catch { app.innerHTML = `<div class="share-error"><h1>Este link não parece válido</h1><a href="${location.pathname}">Abrir VLI Diagrams</a></div>`; }
