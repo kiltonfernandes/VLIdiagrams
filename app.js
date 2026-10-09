@@ -245,7 +245,7 @@ function bindEditor(d) {
   const wrap = document.getElementById("canvasWrap");
   wrap.addEventListener("wheel", ev => { ev.preventDefault(); zoom(ev.deltaY < 0 ? 1.08 : 1 / 1.08, { x: ev.clientX, y: ev.clientY }); }, { passive: false });
   wrap.addEventListener("pointerdown", ev => {
-    if (ev.button !== 0 || !wrap.classList.contains("pan-mode") || ev.target.closest("button,input,textarea")) return;
+    if (ev.button !== 0 || !wrap.classList.contains("pan-mode") || ev.target.closest("button")) return;
     ev.preventDefault();
     drag = { type: "pan", pointerId: ev.pointerId, x: ev.clientX, y: ev.clientY, panX: pan.x, panY: pan.y, moved: false };
     wrap.setPointerCapture(ev.pointerId);
