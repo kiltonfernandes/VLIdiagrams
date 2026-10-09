@@ -12,6 +12,7 @@ const flowNodeTypes = [
 const initialState = { folders: [], diagrams: [], activeDiagramId: null };
 let state = readState();
 let mermaidPromise;
+let mermaidQueue = Promise.resolve();
 let selectedElement = null;
 let connectMode = false;
 let deleteHandlerBound = false;
@@ -97,7 +98,7 @@ function renderElement(e) {
   if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>RAIA</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;--shape-color:${e.color || "#d9d3ff"}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
-  return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
 
 function bindShell() {
@@ -114,7 +115,7 @@ function bindShell() {
   document.getElementById("searchDiagrams")?.addEventListener("input", ev => {
     document.querySelectorAll("[data-card]").forEach(card => card.hidden = !card.textContent.toLowerCase().includes(ev.target.value.toLowerCase()));
   });
-  document.getElementById("importButton")?.addEventListener("click", () => showMermaidModal());
+  document.getElementById("importButton")?.addEventListener("click", () => showMermaidModal(null, { importAsDiagram: true }));
   document.getElementById("settings")?.addEventListener("click", () => toast("Configurações e Notion chegam em uma etapa futura."));
 }
 
@@ -222,6 +223,7 @@ function bindEditor(d) {
   document.querySelectorAll("[data-add-node]").forEach(btn => btn.addEventListener("click", ev => { ev.stopPropagation(); showNodeChoices(d,btn.dataset.addNode,btn.dataset.side,btn); }));
   document.querySelectorAll("[data-lane-menu]").forEach(btn => btn.addEventListener("click", ev => {ev.stopPropagation();laneMenu(d,btn.dataset.laneMenu,btn);}));
   document.querySelectorAll("[data-edit-mermaid]").forEach(btn => btn.addEventListener("click", () => editMermaid(d, btn.dataset.editMermaid)));
+  document.querySelectorAll("[data-convert-mermaid]").forEach(btn => btn.addEventListener("click", ev => {ev.stopPropagation();convertMermaidCard(d,btn.dataset.convertMermaid);}));
   document.querySelectorAll("[data-resize]").forEach(handle => handle.addEventListener("pointerdown", ev => startResize(ev, d, handle.dataset.resize)));
   document.querySelectorAll("[data-resize-lane]").forEach(handle => handle.addEventListener("pointerdown", ev => startLaneResize(ev,d,handle.dataset.resizeLane)));
   document.querySelectorAll("[data-element]").forEach(el => {
@@ -308,10 +310,11 @@ function addConnectedNode(d,fromId,side,type){
   const next={id:id(),type:"shape",shape:type,text:preset.label,color:colors[d.elements.filter(e=>e.type==="shape").length%colors.length],x,y,width:preset.width,height:preset.height};
   d.elements.push(next,{id:id(),type:"connector",from:source.id,to:next.id});selectedElement=null;touchDiagram(d);render();
 }
-function showMermaidModal(existing = null) {
+function showMermaidModal(existing = null, options = {}) {
+  const importAsDiagram = Boolean(options.importAsDiagram && !existing);
   const defaultCode = `flowchart TD\n    A[Ideia] --> B[Etapa]\n    B --> C[Resultado]`;
   const root = document.getElementById("modalRoot");
-  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal mermaid-modal"><div class="modal-head"><div><span class="mermaid-symbol">⌘</span><div><h2>${existing ? "Editar Mermaid" : "Adicionar Mermaid"}</h2><p>Cole ou escreva código Mermaid 11+.</p></div></div><button class="icon-button" id="closeModal">×</button></div><label class="field-label">Título do bloco<input class="text-input" id="mermaidTitleInput" value="${escapeHtml(existing?.title || "Diagrama Mermaid")}" /></label><div class="code-preview"><div class="code-pane"><div class="pane-label">CÓDIGO</div><textarea id="mermaidCodeInput" spellcheck="false">${escapeHtml(existing?.code || defaultCode)}</textarea></div><div class="preview-pane"><div class="pane-label">PRÉVIA</div><div id="modalPreview"><span class="render-loading">Renderizando…</span></div></div></div><div class="modal-foot"><span id="validationMessage">A prévia atualiza enquanto você digita.</span><div><button class="button secondary" id="cancelModal">Cancelar</button><button class="button primary" id="saveMermaid">${existing ? "Salvar alterações" : "Adicionar ao quadro"}</button></div></div></section></div>`;
+  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><section class="modal mermaid-modal"><div class="modal-head"><div><span class="mermaid-symbol">⌘</span><div><h2>${existing ? "Editar Mermaid" : importAsDiagram ? "Importar como diagrama" : "Adicionar Mermaid"}</h2><p>${importAsDiagram ? "O fluxograma será convertido em formas, conectores e raias editáveis." : "Cole ou escreva código Mermaid 11+."}</p></div></div><button class="icon-button" id="closeModal">×</button></div><label class="field-label">${importAsDiagram ? "Nome do diagrama" : "Título do bloco"}<input class="text-input" id="mermaidTitleInput" value="${escapeHtml(existing?.title || "Diagrama Mermaid")}" /></label><div class="code-preview"><div class="code-pane"><div class="pane-label">CÓDIGO</div><textarea id="mermaidCodeInput" spellcheck="false">${escapeHtml(existing?.code || defaultCode)}</textarea></div><div class="preview-pane"><div class="pane-label">PRÉVIA</div><div id="modalPreview"><span class="render-loading">Renderizando…</span></div></div></div><div class="modal-foot"><span id="validationMessage">${importAsDiagram ? "Cada etapa e conexão ficará editável no quadro." : "A prévia atualiza enquanto você digita."}</span><div><button class="button secondary" id="cancelModal">Cancelar</button><button class="button primary" id="saveMermaid">${existing ? "Salvar alterações" : importAsDiagram ? "Criar diagrama editável" : "Adicionar ao quadro"}</button></div></div></section></div>`;
   const close = () => root.innerHTML = "";
   document.getElementById("closeModal").onclick = close; document.getElementById("cancelModal").onclick = close;
   document.getElementById("modalBackdrop").addEventListener("click", ev => { if (ev.target.id === "modalBackdrop") close(); });
@@ -322,13 +325,28 @@ function showMermaidModal(existing = null) {
     catch (error) { target.innerHTML = `<pre class="render-error">${escapeHtml(error.message || "Erro de sintaxe")}</pre>`; document.getElementById("validationMessage").textContent = "Revise o código Mermaid"; }
   }, 280);
   codeInput.addEventListener("input", renderPreview); renderPreview();
-  document.getElementById("saveMermaid").onclick = () => {
+  document.getElementById("saveMermaid").onclick = async () => {
+    const code = codeInput.value.trim();
+    if (!code) { toast("Escreva o código Mermaid antes de salvar"); return; }
+    if (importAsDiagram) {
+      const saveButton = document.getElementById("saveMermaid"), status = document.getElementById("validationMessage");
+      saveButton.disabled = true; saveButton.textContent = "Convertendo…"; status.textContent = "Lendo formas, conexões e raias…";
+      try {
+        const elements = await convertMermaidFlowchart(code);
+        const title = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
+        const d = { id:id(), title, folderId:null, elements, sourceMermaid:code, createdAt:Date.now(), updatedAt:Date.now() };
+        state.diagrams.unshift(d); state.activeDiagramId=d.id; persist(); close(); render(); fitDiagramToView(d); toast("Fluxograma convertido em itens editáveis");
+      } catch (error) {
+        saveButton.disabled = false; saveButton.textContent = "Criar diagrama editável";
+        status.textContent = error.message || "Não foi possível converter este fluxograma.";
+      }
+      return;
+    }
     let d = currentDiagram();
     if (!d) {
       d = { id: id(), title: document.getElementById("mermaidTitleInput").value.trim() || "Novo diagrama", folderId: null, elements: [], createdAt: Date.now(), updatedAt: Date.now() };
       state.diagrams.unshift(d); state.activeDiagramId = d.id;
     }
-    const code = codeInput.value.trim(); if (!code) { toast("Escreva o código Mermaid antes de salvar"); return; }
     const blockTitle = document.getElementById("mermaidTitleInput").value.trim() || "Diagrama Mermaid";
     if (existing) { const item = d.elements.find(e => e.id === existing.id); if (item) { item.code = code; item.title = blockTitle; } }
     else d.elements.push({ id: id(), type: "mermaid", title: blockTitle, code, x: 390 + Math.random() * 80, y: 110 + Math.random() * 80, width: 390, height: 250 });
@@ -387,15 +405,100 @@ function drawConnections(d) {
     const aw=a.width||220,ah=a.height||190,bw=b.width||220,bh=b.height||190,ax=a.x+aw/2,ay=a.y+ah/2,bx=b.x+bw/2,by=b.y+bh/2;
     const edge=(item,cx,cy,tx,ty)=>{const w=(item.width||220)/2,h=(item.height||190)/2,dx=tx-cx,dy=ty-cy;let scale;if(item.shape==="decision")scale=1/(Math.abs(dx)/w+Math.abs(dy)/h||1);else scale=1/(Math.max(Math.abs(dx)/w,Math.abs(dy)/h)||1);return{x:cx+dx*scale,y:cy+dy*scale};};
     const from=edge(a,ax,ay,bx,by),to=edge(b,bx,by,ax,ay);
-    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" marker-end="url(#arrowhead)" />`;
+    const mx=(from.x+to.x)/2,my=(from.y+to.y)/2,style=line.stroke==="dotted"?'stroke-dasharray="5 5"':line.stroke==="thick"?'stroke-width="3.5"':"";
+    return `<path class="connector-path ${selectedElement===line.id?"selected":""}" data-connector="${line.id}" d="M ${from.x} ${from.y} L ${to.x} ${to.y}" marker-end="url(#arrowhead)" ${style}/>${line.text?`<text class="connector-label" x="${mx}" y="${my-7}" text-anchor="middle">${escapeHtml(line.text)}</text>`:""}`;
   }).join("");
   svg.querySelectorAll("[data-connector]").forEach(path=>path.addEventListener("click",ev=>{ev.stopPropagation();selectedElement=path.dataset.connector;drawConnections(d);}));
 }
-async function renderSvg(source, renderId) {
+async function getMermaid() {
   if (!mermaidPromise) mermaidPromise = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs").then(module => { module.default.initialize({ startOnLoad: false, securityLevel: "strict", theme: "default", flowchart: { curve: "linear", htmlLabels: true } }); return module.default; });
-  const mermaid = await mermaidPromise;
-  const result = await mermaid.render(renderId.replace(/[^a-zA-Z0-9_-]/g, ""), source);
-  return result.svg;
+  return mermaidPromise;
+}
+function serializeMermaid(task){const result=mermaidQueue.then(task,task);mermaidQueue=result.then(()=>undefined,()=>undefined);return result;}
+async function renderSvg(source, renderId) {
+  const mermaid = await getMermaid();
+  return serializeMermaid(async()=>{const result=await mermaid.render(renderId.replace(/[^a-zA-Z0-9_-]/g,""),source);return result.svg;});
+}
+
+async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
+  const graph=await serializeMermaid(async()=>{
+    const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(source),db=parsed.db||parsed.parser?.yy;
+    const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
+    if(!/flowchart|graph|swimlane/.test(diagramType)||!db?.getVertices||!db?.getEdges) throw new Error("A conversão editável aceita Mermaid flowchart, graph e swimlane. Outros tipos podem ser adicionados como cartão Mermaid no editor.");
+    const rawVertices=db.getVertices(),vertices=[...(rawVertices instanceof Map?rawVertices.values():Array.isArray(rawVertices)?rawVertices:Object.values(rawVertices||{}))].map(v=>({...v}));
+    const edges=Array.from(db.getEdges()||[]).map(e=>({...e}));
+    const groups=typeof db.getSubGraphs==="function"?(db.getSubGraphs()||[]).map(group=>({...group,nodes:[...(group.nodes||[])]})):[];
+    const direction=typeof db.getDirection==="function"?String(db.getDirection()||"TD").toUpperCase():"TD";
+    return {diagramType,vertices,edges,groups,direction};
+  });
+  const {vertices,edges,groups,direction}=graph;
+  if(!vertices.length)throw new Error("Não encontrei etapas neste fluxograma.");
+  const byId=new Map(vertices.map(v=>[String(v.id),v]));
+  const validEdges=edges.filter(e=>byId.has(String(e.start))&&byId.has(String(e.end)));
+  const ranks=new Map(vertices.map(v=>[String(v.id),0])),incoming=new Map(vertices.map(v=>[String(v.id),0])),outgoing=new Map(vertices.map(v=>[String(v.id),[]]));
+  for(const edge of validEdges){incoming.set(String(edge.end),(incoming.get(String(edge.end))||0)+1);outgoing.get(String(edge.start))?.push(String(edge.end));}
+  const queue=vertices.map(v=>String(v.id)).filter(key=>incoming.get(key)===0);
+  for(let i=0;i<queue.length;i++){const from=queue[i];for(const to of outgoing.get(from)||[]){ranks.set(to,Math.max(ranks.get(to)||0,(ranks.get(from)||0)+1));incoming.set(to,incoming.get(to)-1);if(incoming.get(to)===0)queue.push(to);}}
+  const maxRank=Math.max(0,...ranks.values());
+  const laneGroups=[];const assigned=new Set();
+  for(const group of groups||[]){
+    const members=(group.nodes||[]).map(String).filter(key=>byId.has(key)&&!assigned.has(key));
+    if(!members.length)continue;
+    members.forEach(key=>assigned.add(key));laneGroups.push({id:String(group.id||id()),name:String(group.title||group.id||"Raia"),members});
+  }
+  const ungrouped=vertices.map(v=>String(v.id)).filter(key=>!assigned.has(key));
+  const elementByKey=new Map();let elements=[];const shapeCount={};
+  const makeNode=(key,x,y)=>{
+    const vertex=byId.get(key),shape=mermaidShape(vertex.type),preset=flowNodeTypes.find(item=>item.type===shape)||flowNodeTypes[0];
+    const label=plainMermaidLabel(vertex.text||key),width=preset.width,height=preset.height,nodeId=id();
+    shapeCount[shape]=(shapeCount[shape]||0)+1;
+    const item={id:nodeId,type:"shape",shape,text:label,color:colors[(shapeCount[shape]-1)%colors.length],x,y,width,height};
+    elementByKey.set(key,item);elements.push(item);return item;
+  };
+  let freeNodesTop=90;
+  if(laneGroups.length){
+    const laneX=60,laneWidth=Math.max(1500,(maxRank+1)*275+260);let laneY=70;
+    for(const group of laneGroups){
+      const members=group.members.slice().sort((a,b)=>(ranks.get(a)-ranks.get(b))||a.localeCompare(b));
+      const layerCounts=new Map();members.forEach(key=>layerCounts.set(ranks.get(key),(layerCounts.get(ranks.get(key))||0)+1));
+      const laneHeight=Math.max(230,...[...layerCounts.values()].map(count=>count*150+90));
+      elements.push({id:id(),type:"lane",name:group.name,x:laneX,y:laneY,width:laneWidth,height:laneHeight});
+      const layerIndexes=new Map();
+      for(const key of members){const rank=ranks.get(key)||0,index=layerIndexes.get(rank)||0;layerIndexes.set(rank,index+1);const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];const count=layerCounts.get(rank)||1;const rowY=laneY+(laneHeight-(count*preset.height+(count-1)*18))/2+index*(preset.height+18);makeNode(key,laneX+175+rank*270,rowY);}
+      laneY+=laneHeight+14;
+    }
+    freeNodesTop=laneY+20;
+  }
+  if(ungrouped.length){
+    const remaining=ungrouped.slice().sort((a,b)=>(ranks.get(a)-ranks.get(b))||a.localeCompare(b)),layers=new Map();
+    for(const key of remaining){const rank=ranks.get(key)||0;if(!layers.has(rank))layers.set(rank,[]);layers.get(rank).push(key);}
+    for(const [rank,keys] of layers){keys.forEach((key,index)=>{const preset=flowNodeTypes.find(item=>item.type===mermaidShape(byId.get(key).type))||flowNodeTypes[0];if(direction==="LR"||direction==="RL"){const col=direction==="RL"?maxRank-rank:rank;makeNode(key,100+col*280,freeNodesTop+index*175);}else{const row=direction==="BT"?maxRank-rank:rank;makeNode(key,120+index*235,freeNodesTop+row*205);}});}
+  }
+  for(const edge of validEdges){const from=elementByKey.get(String(edge.start)),to=elementByKey.get(String(edge.end));if(from&&to)elements.push({id:id(),type:"connector",from:from.id,to:to.id,text:plainMermaidLabel(edge.text||""),stroke:edge.stroke});}
+  elements.forEach(element=>{if(element.type!=="connector"){element.x+=offset.x;element.y+=offset.y;}});return elements;
+}
+function convertMermaidCard(d,elementId){
+  const card=d.elements.find(e=>e.id===elementId&&e.type==="mermaid");if(!card)return;
+  showConfirmDialog({title:"Converter para formas editáveis?",message:"O cartão será trocado por formas, raias e setas. O código original fica guardado no quadro.",confirmLabel:"Converter diagrama",onConfirm:async()=>{
+    try{const elements=await convertMermaidFlowchart(card.code,{x:(card.x||0)-60,y:(card.y||0)-70});d.elements=d.elements.filter(e=>e.id!==card.id);d.elements.push(...elements);d.sourceMermaid=card.code;touchDiagram(d);render();fitDiagramToView(d);toast("Diagrama convertido em itens editáveis");}
+    catch(error){toast(error.message||"Não foi possível converter este fluxograma");}
+  }});
+}
+function mermaidShape(type){
+  const shape=String(type||"rect").toLowerCase().replaceAll("_","-");
+  if(["diamond","diam","decision"].includes(shape))return "decision";
+  if(["stadium","terminator","pill","start","stop","circle","doublecircle","ellipse"].includes(shape))return "terminator";
+  if(["lean-right","lean-r","lean-left","lean-l","parallelogram","parallelogram-alt","manual-input"].includes(shape))return "io";
+  if(["cylinder","cyl","database","db","datastore"].includes(shape))return "database";
+  if(["document","doc","docs","lined-document"].includes(shape))return "document";
+  if(["subroutine","subproc","subprocess","processes"].includes(shape))return "subprocess";
+  return "process";
+}
+function plainMermaidLabel(value){
+  const box=document.createElement("textarea");box.innerHTML=String(value).replaceAll("<br>"," ").replaceAll("<br/>"," ").replaceAll("<br />"," ").replace(/<[^>]*>/g,"");return box.value.trim();
+}
+function fitDiagramToView(d){
+  requestAnimationFrame(()=>{const wrap=document.getElementById("canvasWrap");if(!wrap)return;const items=d.elements.filter(e=>e.type!=="connector");if(!items.length)return;const left=Math.min(...items.map(e=>e.x)),top=Math.min(...items.map(e=>e.y)),right=Math.max(...items.map(e=>e.x+(e.width||180))),bottom=Math.max(...items.map(e=>e.y+(e.height||105))),width=right-left,height=bottom-top;currentScale=Math.max(.35,Math.min(1.1,(wrap.clientWidth-90)/width,(wrap.clientHeight-90)/height));pan.x=(wrap.clientWidth-width*currentScale)/2-left*currentScale;pan.y=(wrap.clientHeight-height*currentScale)/2-top*currentScale;applyTransform();});
 }
 
 function touchDiagram(d) {
