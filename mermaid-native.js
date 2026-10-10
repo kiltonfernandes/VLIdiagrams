@@ -44,6 +44,34 @@ function sourceSubgraphs(source, knownNodes, plainMermaidLabel) {
   }
   return groups.filter(group => group.nodes.length);
 }
+export function fallbackFlowchartFromSource(source, plainMermaidLabel=value=>String(value??"")) {
+  const vertices = new Map(), edges = [], lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+  const direction = lines.map(line=>line.trim()).map(line=>line.match(/^(?:flowchart|graph)\s+(TD|TB|BT|LR|RL)\b/i)?.[1]).find(Boolean)?.toUpperCase() || "TD";
+  const addNode = (id, label=id, type="rect") => {
+    if (!id || /^(flowchart|graph|subgraph|end|classDef|style|linkStyle)$/i.test(id)) return;
+    const existing = vertices.get(id);
+    vertices.set(id, { id, text: plainMermaidLabel(label || existing?.text || id), type: existing?.type === "diamond" ? "diamond" : type });
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || /^(flowchart|graph|subgraph|end|classDef|style|linkStyle)\b/i.test(line)) continue;
+    for (const match of line.matchAll(/\b([A-Za-z_][\w-]*)\s*(\[\[(.*?)\]\]|\[(.*?)\]|\{(.*?)\}|\((.*?)\))?/g)) {
+      const [, id, token, doubleBracket, bracket, diamond, rounded] = match;
+      if (!token && !/(-->|==>|-.->|---)/.test(line)) continue;
+      addNode(id, doubleBracket ?? bracket ?? diamond ?? rounded ?? id, diamond !== undefined ? "diamond" : rounded !== undefined ? "stadium" : "rect");
+    }
+    const parts = line.split(/(?:-->|==>|-.->|---)/).map(part=>part.replace(/^\s*\|[^|]*\|\s*/, "").trim());
+    const ids = parts.map(part=>part.match(/^([A-Za-z_][\w-]*)/)?.[1]).filter(Boolean);
+    for (let index=0; index<ids.length-1; index++) {
+      addNode(ids[index]); addNode(ids[index+1]);
+      edges.push({ start: ids[index], end: ids[index+1], text: "" });
+    }
+  }
+  const knownNodes = new Set(vertices.keys()), groups = sourceSubgraphs(source, knownNodes, plainMermaidLabel);
+  if (!vertices.size) throw new Error("Não encontrei etapas em formato de fluxograma.");
+  return { diagramType:"flowchart", vertices:[...vertices.values()], edges, groups, direction };
+}
+
 export function snapshotMermaid(parsed,plainMermaidLabel,source=""){
  const db=parsed.db||parsed.parser?.yy;
     const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
