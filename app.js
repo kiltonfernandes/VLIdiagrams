@@ -97,7 +97,7 @@ async function bootWorkspace() {
     } else state = { ...initialState, ...remote };
     let converted = false;
     for (const diagram of state.diagrams) {
-      for (const card of [...(diagram.elements || []).filter(element => element.type === "mermaid" && element.convertOnLoad)]) {
+      for (const card of [...(diagram.elements || []).filter(element => element.type === "mermaid")]) {
         try {
           const elements = await convertMermaidFlowchart(card.code, { x: card.x || 0, y: card.y || 0 });
           diagram.elements = diagram.elements.filter(element => element.id !== card.id);
@@ -106,8 +106,7 @@ async function bootWorkspace() {
           diagram.updatedAt = Date.now();
           converted = true;
         } catch (error) {
-          card.convertOnLoad = false;
-          console.warn("O código Mermaid ficou como cartão porque não deu para converter em formas editáveis:", error);
+          console.warn("Não foi possível migrar um cartão Mermaid legado:", error);
         }
       }
     }
@@ -345,7 +344,7 @@ function bindEditor(d) {
     document.getElementById("connectItems").classList.toggle("active", connectMode);
     toast(connectMode ? "Selecione dois itens para conectá-los" : "Modo de conexão encerrado");
   });
-  document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal());
+  document.getElementById("addMermaid").addEventListener("click", () => showMermaidModal(null, { importAsDiagram: true }));
   document.getElementById("themeButton").addEventListener("click", () => showThemePicker(d));
   document.getElementById("exportDiagram").addEventListener("click", () => showExportModal(d));
   document.getElementById("addSequence").addEventListener("click", () => editSequence(d));
