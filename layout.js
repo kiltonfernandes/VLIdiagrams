@@ -28,6 +28,35 @@ export function diagramBounds(elements) {
   return { left, top, right, bottom, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
 }
 
+function fallbackLayout(elements, direction, offset) {
+  const result = structuredClone(elements), lanes = result.filter(item => item.type === "lane"), shapes = result.filter(item => item.type === "shape");
+  const byLane = new Map(lanes.map(lane => [lane.id, []])), free = [];
+  for (const shape of shapes) (byLane.get(shape.laneId) || free).push(shape);
+  const horizontal = direction === "RIGHT" || direction === "LEFT";
+  let cursor = horizontal ? offset.x : offset.y;
+  for (const lane of lanes) {
+    const members = byLane.get(lane.id) || [], nodeSpan = members.reduce((sum, node) => sum + (horizontal ? (node.width || 180) : (node.height || 105)) + 58, 0);
+    lane.width = horizontal ? Math.max(520, nodeSpan + 240) : 760;
+    lane.height = horizontal ? 260 : Math.max(230, nodeSpan + 74);
+    lane.x = horizontal ? cursor : offset.x;
+    lane.y = horizontal ? offset.y : cursor;
+    let nodeCursor = horizontal ? lane.x + 204 : lane.y + 42;
+    for (const node of members) {
+      node.x = horizontal ? nodeCursor : lane.x + 204;
+      node.y = horizontal ? lane.y + 62 : nodeCursor;
+      nodeCursor += (horizontal ? (node.width || 180) : (node.height || 105)) + 58;
+    }
+    cursor += (horizontal ? lane.width : lane.height) + 64;
+  }
+  let freeCursor = horizontal ? offset.y : offset.x;
+  for (const node of free) {
+    node.x = horizontal ? offset.x : freeCursor;
+    node.y = horizontal ? freeCursor : offset.y;
+    freeCursor += (horizontal ? (node.height || 105) : (node.width || 180)) + 64;
+  }
+  return result;
+}
+
 // Return a new snapshot. The caller can cancel or undo without changing its input.
 export async function layoutElements(elements, direction = "DOWN", engine, offset = { x: 60, y: 70 }) {
   const result = structuredClone(elements);
@@ -81,13 +110,20 @@ export async function layoutElements(elements, direction = "DOWN", engine, offse
   };
   const layoutEngine=engine||await getLayoutEngine();
   let laidOut;
-  try{laidOut=await layoutEngine.layout(structuredClone(graph));}
-  catch(firstError){
+  try { laidOut = await layoutEngine.layout(structuredClone(graph)); }
+  catch (firstError) {
     // ELK 0.11 can fail on a compound group containing a cycle and an outgoing edge.
     // Retain hierarchy and retry with the alternate supported cycle breaker.
-    const retry=structuredClone(graph);
-    const configure=node=>{if(node.layoutOptions)node.layoutOptions["elk.layered.cycleBreaking.strategy"]="DEPTH_FIRST";for(const child of node.children||[])configure(child);};
-    configure(retry);laidOut=await layoutEngine.layout(retry);
+    const retry = structuredClone(graph);
+    const configure = node => { if(node.layoutOptions) node.layoutOptions["elk.layered.cycleBreaking.strategy"] = "DEPTH_FIRST"; for(const child of node.children||[]) configure(child); };
+    configure(retry);
+    try { laidOut = await layoutEngine.layout(retry); }
+    catch (secondError) {
+      // A bad ELK internal error must not leave Mermaid source code in the editor.
+      // Keep every native node and swimlane, with a deterministic readable layout.
+      console.warn("ELK could not lay out this diagram; using the safe native layout.", firstError, secondError);
+      return fallbackLayout(result, direction, offset);
+    }
   }
   const byId = new Map(result.map(e => [e.id, e]));
   const routes = [];
