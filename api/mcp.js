@@ -52,7 +52,7 @@ function makeHandler(appOrigin) {
     state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("create_diagram_from_mermaid", {
-    description: "Cria e salva um diagrama VLI nativo e editável a partir do Mermaid. Fluxogramas viram formas, raias e conectores; sequenceDiagram vira participantes e mensagens nativas. O código Mermaid é mantido apenas como origem, nunca como cartão no quadro.",
+    description: "Cria e salva qualquer diagrama Mermaid no VLI sem mostrar código no quadro. Fluxogramas viram formas, raias e conectores; sequenceDiagram vira participantes e mensagens nativas; os demais tipos entram como diagrama visual renderizado. O código Mermaid é mantido apenas como origem.",
     inputSchema: z.object({ title: z.string().min(1).max(160), mermaid: z.string().min(1).max(50000), folder_id: z.string().optional() })
   }, async ({ title, mermaid, folder_id }) => {
     const state = await readWorkspace();
@@ -61,12 +61,12 @@ function makeHandler(appOrigin) {
     let elements;
     try { elements = await nativeElementsFromMermaid(mermaid, {}, makeId); }
     catch (error) { return { isError:true, content:[{ type:"text", text:`Não foi possível converter o Mermaid em elementos nativos: ${error.message||"erro desconhecido"}` }] }; }
-    if (elements[0]?.type === "sequence") elements[0].title = title.trim();
+    if (elements[0]?.type === "sequence" || elements[0]?.type === "mermaid-render") elements[0].title = title.trim();
     const diagram = { id, title: title.trim(), folderId: folder_id || null, elements, sourceMermaid: mermaid, createdAt: now, updatedAt: now };
-    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, url: diagramUrl(id), message: "Diagrama nativo salvo no VLI." });
+    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, url: diagramUrl(id), message: "Diagrama salvo no VLI sem bloco de código." });
   });
   server.registerTool("update_diagram_from_mermaid", {
-    description: "Converte o Mermaid e substitui o conteúdo de um diagrama pelos seus elementos nativos editáveis. Nunca salva um cartão com código no quadro.",
+    description: "Substitui o conteúdo pelo Mermaid sem salvar cartão de código: fluxogramas e sequências são editáveis; outros tipos entram como diagrama visual renderizado.",
     inputSchema: z.object({ diagram_id: z.string(), mermaid: z.string().min(1).max(50000), title: z.string().max(160).optional() })
   }, async ({ diagram_id, mermaid, title }) => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
@@ -75,9 +75,9 @@ function makeHandler(appOrigin) {
     try { elements = await nativeElementsFromMermaid(mermaid, {}, makeId); }
     catch (error) { return { isError:true, content:[{ type:"text", text:`Não foi possível converter o Mermaid em elementos nativos: ${error.message||"erro desconhecido"}` }] }; }
     diagram.title = title?.trim() || diagram.title;
-    if (elements[0]?.type === "sequence") elements[0].title = diagram.title;
+    if (elements[0]?.type === "sequence" || elements[0]?.type === "mermaid-render") elements[0].title = diagram.title;
     diagram.elements = elements; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
-    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Diagrama atualizado como elementos nativos." });
+    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Diagrama atualizado sem bloco de código." });
   });
   server.registerTool("export_diagram", {
     description: "Exporta um diagrama salvo em PNG ou SVG sem abrir o app. Aceita fluxogramas e sequenceDiagram de origem, formas nativas e sequências editáveis. Retorna nome, dimensões e URL de download protegida. PNG inclui imagem no retorno MCP quando tem até 2 MB; SVG inclui o arquivo vetorial como recurso. scope pode ser full, overview ou o ID de uma raia. A exportação não modifica o diagrama.",

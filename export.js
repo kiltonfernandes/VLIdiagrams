@@ -60,7 +60,7 @@ export function buildDiagramSvg(diagram,{theme={},scope='full',transparent=false
   for(const e of nodes.filter(e=>e.type!=='lane')){
     if(e.type==='shape')body+=shapeSvg(e,t);
     else if(e.type==='sequence'){const s=renderSequence(e.model,t,'export-'+e.id);body+=`<g transform="translate(${e.x} ${e.y+40})">${s.body}</g>${textBlock(e.title||'Sequência',e.x+16,e.y+24,e.width-32,{anchor:'start',fill:t.ink,weight:600})}`;}
-    else if(e.type==='mermaid'){
+    else if(e.type==='mermaid'||e.type==='mermaid-render'){
       if(!mermaid[e.id])throw new Error('Aguarde o Mermaid terminar de renderizar e tente exportar novamente.');
       body+=`<g transform="translate(${e.x} ${e.y})"><rect width="${e.width||390}" height="${e.height||250}" rx="11" fill="#fff" stroke="${color(t.border)}"/>${textBlock(e.title||'Mermaid',16,25,(e.width||390)-32,{anchor:'start',size:12,fill:t.ink,weight:600})}<svg x="16" y="44" width="${(e.width||390)-32}" height="${(e.height||250)-58}" id="${xml(mermaid[e.id].id)}" viewBox="${xml(mermaid[e.id].viewBox)}" preserveAspectRatio="xMidYMid meet">${mermaid[e.id].body}</svg></g>`;
     }else if(e.type==='sticky'||e.type==='summary')body+=`<g transform="translate(${e.x} ${e.y})"><rect width="${e.width||220}" height="${e.height||190}" rx="9" fill="${e.type==='sticky'?color(e.color,'#ffe58f'):'#fff'}" stroke="${color(t.border)}"/>${e.title?textBlock(e.title,16,28,e.width-32,{anchor:'start',fill:t.ink,weight:600,size:15}):''}${textBlock(e.text,16,e.title?64:28,(e.width||220)-32,{anchor:'start',fill:t.ink,size:12})}</g>`;
