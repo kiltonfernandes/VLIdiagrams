@@ -72,6 +72,12 @@ export function fallbackFlowchartFromSource(source, plainMermaidLabel=value=>Str
   return { diagramType:"flowchart", vertices:[...vertices.values()], edges, groups, direction };
 }
 
+export function isFlowchartSource(source) {
+  return /^\s*(?:flowchart|graph)\b/im.test(String(source || ""));
+}
+export function renderedMermaidElement(source, offset={x:0,y:0}, makeId=()=>crypto.randomUUID()) {
+  return [{ id:makeId(), type:"mermaid-render", title:"Diagrama Mermaid", code:String(source || ""), x:60+offset.x, y:70+offset.y, width:920, height:640 }];
+}
 export function snapshotMermaid(parsed,plainMermaidLabel,source=""){
  const db=parsed.db||parsed.parser?.yy;
     const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
