@@ -1,0 +1,51 @@
+flowchart TD
+  subgraph RAIA1["Raia Usuário pagador"]
+    INICIO(["Início: usuário solicita transferência no VoltPix"])
+    E03["E03 Selecionar chave Pulso do recebedor"]
+  end
+  subgraph RAIA2["Raia Aplicativo VoltPix"]
+    E01["E01 Autenticar usuário com Chave de Ignição"]
+    E02["E02 Consultar saldo de Carga"]
+    PD01{"PD-01 Saldo de Carga suficiente?"}
+    PD02{"PD-02 Recebedor localizado e ativo?"}
+    E04["E04 Validar assinatura elétrica do recebedor"]
+    E05["E05 Calcular tarifa Zona conforme distritos"]
+    E06["E06 Autorizar transferência com token de pulso"]
+    PD04{"PD-04 Rede elétrica disponível?"}
+    E10["E10 Registrar promessa em fila offline"]
+    E09["E09 Liquidar transferência no Ledger e emitir comprovante"]
+    FR1(["Fim: transferência recusada"])
+    FO(["Fim: transferência em fila para sincronização"])
+    FOK(["Fim: transferência concluída"])
+  end
+  subgraph RAIA3["Raia Rede elétrica Pipistrello"]
+    E07["E07 Transmitir Carga pela rede elétrica"]
+    PD03{"PD-03 Confirmação recebida no prazo do pulso?"}
+    E11["E11 Acionar rastreio de pulso e devolver Carga"]
+    FI(["Fim: Carga devolvida após interceptação suspeita"])
+  end
+  subgraph RAIA4["Raia Usuário recebedor"]
+    E08["E08 Confirmar recebimento no medidor do recebedor"]
+  end
+  INICIO --> E01
+  E01 --> E02
+  E02 --> PD01
+  PD01 -- "Não" --> FR1
+  PD01 -- "Sim" --> E03
+  E03 --> E04
+  E04 --> PD02
+  PD02 -- "Não" --> FR1
+  PD02 -- "Sim" --> E05
+  E05 --> E06
+  E06 --> PD04
+  PD04 -- "Não" --> E10
+  E10 --> FO
+  PD04 -- "Sim" --> E07
+  E07 --> E08
+  E08 --> PD03
+  PD03 -- "Não" --> E11
+  E11 --> FI
+  PD03 -- "Sim" --> E09
+  E09 --> FOK
+  classDef atencao fill:#F96,stroke:#B33,stroke-width:2px
+  class E11 atencao
