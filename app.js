@@ -1,5 +1,5 @@
 import { DEFAULT_THEME_ID, diagramThemes, getTheme } from "./themes.js";
-import { fallbackFlowchartFromSource, snapshotMermaid, nativeElements } from "./mermaid-native.js";
+import { fallbackFlowchartFromSource, isFlowchartSource, renderedMermaidElement, snapshotMermaid, nativeElements } from "./mermaid-native.js";
 import { routeConnection } from "./connections.js";
 import { layoutElements, geometryKey, diagramBounds } from "./layout.js";
 import { sequenceGeometry, sequenceSvg, validateSequence } from "./sequence.js";
@@ -199,6 +199,7 @@ function renderElement(e,themeId=currentDiagram()?.themeId) {
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   if(e.type === "sequence") return `<article class="sequence-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="sequence-head"><strong>${escapeHtml(e.title||"Sequência")}</strong><div><button class="button secondary" data-edit-sequence="${e.id}">Editar sequência</button><button class="icon-button" data-delete="${e.id}" aria-label="Excluir sequência">×</button></div></div>${sequenceSvg(e.model,getTheme(themeId),"native-"+e.id)}</article>`;
   if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${e.color};` : ""}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if (e.type === "mermaid-render") return `<article class="mermaid-card mermaid-visual" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 920}px;min-height:${e.height || 640}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>DIAGRAMA RENDERIZADO</span></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
 function shouldShowOverview(d){return Boolean(d&&d.elements.filter(e=>e.type==="shape").length>25&&d.elements.some(e=>e.type==="lane"));}
@@ -595,7 +596,7 @@ function applyTransform() { const content = document.getElementById("canvasConte
 function resetView() { currentScale = 1; pan = { x: 0, y: 0 }; applyTransform(); }
 
 async function renderAllMermaid(d) {
-  for (const element of d.elements.filter(e => e.type === "mermaid")) {
+  for (const element of d.elements.filter(e => e.type === "mermaid" || e.type === "mermaid-render")) {
     const target = document.querySelector(`[data-render="${element.id}"]`); if (!target) continue;
     try { target.innerHTML = await renderSvg(element.code, "canvas-" + element.id); }
     catch (error) { target.innerHTML = `<pre class="render-error">${escapeHtml(error.message || "Não foi possível renderizar este Mermaid")}</pre>`; }
@@ -631,15 +632,19 @@ async function renderSvg(source, renderId) {
 }
 
 async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
-  const graph=await serializeMermaid(async()=>{
-    try {
+  try {
+    const graph=await serializeMermaid(async()=>{
       const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizeMermaidSource(source));
       return snapshotMermaid(parsed,plainMermaidLabel,source);
-    } catch (error) {
-      return fallbackFlowchartFromSource(source,plainMermaidLabel);
+    });
+    return nativeElements(graph,offset);
+  } catch (error) {
+    if (isFlowchartSource(source)) {
+      try { return nativeElements(fallbackFlowchartFromSource(source,plainMermaidLabel),offset); }
+      catch (fallbackError) { console.warn("Fallback do fluxograma falhou:", fallbackError); }
     }
-  });
-  return nativeElements(graph,offset);
+    return renderedMermaidElement(source,offset);
+  }
 }
 function convertMermaidCard(d,elementId){
   const card=d.elements.find(e=>e.id===elementId&&e.type==="mermaid");if(!card)return;
@@ -754,7 +759,7 @@ function editSequence(d,elementId){
 
 async function exportSnapshot(d,scope,transparent){
   const snapshot=structuredClone(d),mermaid={};
-  if(scope!=='overview')for(const e of exportElements(snapshot.elements,scope).filter(e=>e.type==='mermaid')){
+  if(scope!=='overview')for(const e of exportElements(snapshot.elements,scope).filter(e=>e.type==='mermaid'||e.type==='mermaid-render')){
     const native=await serializeMermaid(async()=>{
       const m=await getMermaid();
       try{m.initialize({startOnLoad:false,securityLevel:'strict',theme:'default',htmlLabels:false,flowchart:{htmlLabels:false,curve:'linear'},sequence:{wrap:true,useMaxWidth:false}});return (await m.render('export-'+id(),normalizeMermaidSource(e.code))).svg;}
