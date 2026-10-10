@@ -2,7 +2,7 @@ import { layoutElements } from "./layout.js";
 import { sequenceFromDatabase, sequenceGeometry } from "./sequence.js";
 const flowNodeTypes = [
   { type:"process", label:"Novo passo", symbol:"▭", width:180, height:105 },
-  { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:125 },
+  { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:150 },
   { type:"terminator", label:"Início / fim", symbol:"⬭", width:170, height:78 },
   { type:"io", label:"Entrada / saída", symbol:"▱", width:180, height:95 },
   { type:"document", label:"Documento", symbol:"▤", width:170, height:100 },
@@ -21,14 +21,39 @@ function mermaidShape(type){
   return "process";
 }
 
-export function snapshotMermaid(parsed,plainMermaidLabel){
+function sourceSubgraphs(source, knownNodes, plainMermaidLabel) {
+  if (!source) return [];
+  const groups = [], stack = [];
+  for (const rawLine of String(source).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const start = line.match(/^subgraph\s+(.+)$/i);
+    if (start) {
+      const raw = start[1].trim();
+      const bracketed = raw.match(/^([^\s\[]+)\s*\[[\"']?(.+?)[\"']?\]$/);
+      const quoted = raw.match(/^[\"'](.+)[\"']$/);
+      const group = { id: bracketed?.[1] || raw.replace(/[\[]\"']/g, "").replace(/\s+/g, "-"), title: plainMermaidLabel(bracketed?.[2] || quoted?.[1] || raw), nodes: [] };
+      groups.push(group); stack.push(group); continue;
+    }
+    if (/^end$/i.test(line)) { stack.pop(); continue; }
+    if (!stack.length) continue;
+    const identifiers = [...line.matchAll(/\b([A-Za-z_][\w-]*)\s*(?:\[|\(|\{|\[\[)/g)].map(match => match[1]);
+    for (const nodeId of identifiers) {
+      if (!knownNodes.has(nodeId)) continue;
+      for (const group of stack) if (!group.nodes.includes(nodeId)) group.nodes.push(nodeId);
+    }
+  }
+  return groups.filter(group => group.nodes.length);
+}
+export function snapshotMermaid(parsed,plainMermaidLabel,source=""){
  const db=parsed.db||parsed.parser?.yy;
     const diagramType=String(parsed.type||parsed.diagramType||"").toLowerCase();
     if(diagramType.includes("sequence")) return {sequence:sequenceFromDatabase(db,plainMermaidLabel)};
     if(!/flowchart|graph|swimlane/.test(diagramType)||!db?.getVertices||!db?.getEdges) throw new Error("A conversão editável aceita fluxogramas e sequenceDiagram. Outros tipos podem ser mantidos como cartão Mermaid.");
     const rawVertices=db.getVertices(),vertices=[...(rawVertices instanceof Map?rawVertices.values():Array.isArray(rawVertices)?rawVertices:Object.values(rawVertices||{}))].map(v=>({...v,text:plainMermaidLabel(v.text||v.id)}));
     const edges=Array.from(db.getEdges()||[]).map(e=>({...e,text:plainMermaidLabel(e.text||"")}));
-    const groups=typeof db.getSubGraphs==="function"?(db.getSubGraphs()||[]).map(group=>({...group,title:plainMermaidLabel(group.title||group.id),nodes:[...(group.nodes||[])]})):[];
+    const knownNodes=new Set(vertices.map(vertex=>String(vertex.id)));
+    const parserGroups=typeof db.getSubGraphs==="function"?(db.getSubGraphs()||[]).map(group=>({...group,title:plainMermaidLabel(group.title||group.id),nodes:[...(group.nodes||[])]})).filter(group=>group.nodes.some(node=>knownNodes.has(String(node)))):[];
+    const groups=parserGroups.length ? parserGroups : sourceSubgraphs(source,knownNodes,plainMermaidLabel);
     const direction=typeof db.getDirection==="function"?String(db.getDirection()||"TD").toUpperCase():"TD";
     return {diagramType,vertices,edges,groups,direction};
 }
@@ -43,7 +68,9 @@ export async function nativeElements(graph,offset={x:0,y:0},engine,makeId=()=>cr
     const text=plainMermaidLabel(vertex.text||key);
     const available=shape==="decision"?preset.width*.63:preset.width-24;
     const lines=Math.ceil(text.length/Math.max(10,Math.floor(available/7)));
-    const item={id:makeId(),type:"shape",shape,text,colorMode:"theme",sourceId:key,x:0,y:0,width:preset.width,height:Math.max(preset.height,shape==="decision"?(lines*20+16)/.48:lines*20+40)};
+    const minimumHeight=Math.max(preset.height,shape==="decision"?(lines*20+16)/.48:lines*20+40);
+    const decisionSize=shape==="decision"?Math.ceil(Math.max(preset.width,minimumHeight)):null;
+    const item={id:makeId(),type:"shape",shape,text,colorMode:"theme",sourceId:key,x:0,y:0,width:decisionSize||preset.width,height:decisionSize||minimumHeight};
     byKey.set(key,item);elements.push(item);
   }
   // Resolve membership from inner groups, then retain the source group order.

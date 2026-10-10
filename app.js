@@ -11,7 +11,7 @@ function themeStyle(themeId=DEFAULT_THEME_ID){const t=getTheme(themeId);return `
 
 const flowNodeTypes = [
   { type:"process", label:"Novo passo", symbol:"▭", width:180, height:105 },
-  { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:125 },
+  { type:"decision", label:"Nova decisão", symbol:"◇", width:150, height:150 },
   { type:"terminator", label:"Início / fim", symbol:"⬭", width:170, height:78 },
   { type:"io", label:"Entrada / saída", symbol:"▱", width:180, height:95 },
   { type:"document", label:"Documento", symbol:"▤", width:170, height:100 },
