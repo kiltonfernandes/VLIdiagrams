@@ -1,3 +1,5 @@
+import { layoutSwimlanes } from './swimlane-layout.js';
+import { routeConnection } from './connections.js';
 // Layout calculation is independent of the editor and can be exercised in Node.
 let enginePromise;
 export async function getLayoutEngine() {
@@ -65,6 +67,18 @@ export async function layoutElements(elements, direction = "DOWN", engine, offse
   const shapeIds = new Set(shapes.map(e => e.id));
   const lanes = result.filter(e => e.type === "lane");
   const laneIds = new Set(lanes.map(e => e.id));
+  if(lanes.some(lane=>lane.layout==='swimlane')) {
+    layoutSwimlanes(result,offset,direction==='LEFT');
+    const key=geometryKey(result);
+    for(const edge of result.filter(e=>e.type==='connector')){
+      const route=routeConnection(edge,{elements:result},key);
+      if(!route)continue;
+      const coordinates=route.dPath.match(/-?\d+(?:\.\d+)?/g).map(Number),points=[];
+      for(let i=0;i<coordinates.length;i+=2)points.push({x:coordinates[i],y:coordinates[i+1]});
+      edge.route={points,label:route.label,key};
+    }
+    return result;
+  }
   const children = new Map(lanes.map(lane => [lane.id, []]));
   const free = [];
   for (const shape of shapes) {
@@ -167,3 +181,4 @@ export async function layoutElements(elements, direction = "DOWN", engine, offse
   for (const route of routes) route.key = key;
   return result;
 }
+

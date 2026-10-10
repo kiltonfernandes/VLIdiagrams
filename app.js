@@ -1,4 +1,5 @@
 import { DEFAULT_THEME_ID, diagramThemes, getTheme } from "./themes.js";
+import { color } from './svg.js';
 import { fallbackFlowchartFromSource, isFlowchartSource, renderedMermaidElement, snapshotMermaid, nativeElements } from "./mermaid-native.js";
 import { routeConnection } from "./connections.js";
 import { layoutElements, geometryKey, diagramBounds } from "./layout.js";
@@ -109,6 +110,15 @@ async function bootWorkspace() {
           console.warn("Não foi possível migrar um cartão Mermaid legado:", error);
         }
       }
+      // Upgrade earlier native imports once, keeping IDs and edited labels.
+      // Native diagrams without Mermaid source keep their user-arranged layout.
+      const lanes=diagram.elements.filter(e=>e.type==='lane'),shapes=diagram.elements.filter(e=>e.type==='shape');
+      if(diagram.sourceMermaid&&isFlowchartSource(diagram.sourceMermaid)&&lanes.length&&shapes.length&&shapes.every(e=>e.sourceId)&&lanes.some(e=>e.layout!=='swimlane')){
+        const imported=await convertMermaidFlowchart(diagram.sourceMermaid),styles=new Map(imported.filter(e=>e.type==='shape').map(e=>[e.sourceId,e]));
+        for(const node of shapes){const reference=styles.get(node.sourceId);if(!reference)continue;for(const key of ['flowStyle','width','height','fillColor','borderColor','borderWidth','textColor'])if(reference[key]!==undefined)node[key]=reference[key];}
+        for(const lane of lanes)lane.layout='swimlane';
+        diagram.elements=await layoutElements(diagram.elements,'RIGHT');diagram.layoutDirection='RIGHT';diagram.updatedAt=Date.now();converted=true;
+      }
     }
     if (converted) {
       const save = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
@@ -187,7 +197,7 @@ function renderEditor(d) {
         <button class="tool wide" id="addMermaid" title="Adicionar bloco Mermaid"><span class="tool-mermaid">⌘</span><span>Mermaid</span></button><button class="tool wide" id="addSequence" title="Adicionar sequência nativa"><span>⇄</span><span>Sequência</span></button><button class="tool wide" id="themeButton" title="Escolher tema do diagrama"><span class="tool-theme">◉</span><span>Tema</span></button>
         <div class="toolbar-spacer"></div><div class="zoom-controls"><button class="icon-button" id="zoomOut" aria-label="Diminuir zoom">−</button><span id="zoomLabel">100%</span><button class="icon-button" id="zoomIn" aria-label="Aumentar zoom">＋</button><button class="icon-button" id="fitCanvas" title="Ver diagrama inteiro" aria-label="Ver diagrama inteiro">⛶</button><button class="icon-button" id="readCanvas" title="Ler etapa selecionada ou início" aria-label="Ler etapa selecionada ou início">1:1</button></div>
       </div>
-      <div class="reading-toolbar"><button class="button secondary ${overviewVisible?"":"active"}" id="fullFlowCanvas" aria-pressed="${!overviewVisible}">Fluxo completo</button><button class="button secondary ${overviewVisible?"active":""}" id="overviewCanvas" aria-pressed="${overviewVisible}" ${d.elements.some(e=>e.type==="lane")?"":"disabled"}>Visão por fases</button><button class="button secondary" id="organizeFlow">Organizar fluxo</button><button class="button secondary" id="undoLayout" ${layoutUndo?.diagramId===d.id?"":"disabled"}>Desfazer organização</button><label>Direção <select id="flowDirection" aria-label="Direção do fluxo"><option value="DOWN" ${d.layoutDirection!=="RIGHT"?"selected":""}>De cima para baixo</option><option value="RIGHT" ${d.layoutDirection==="RIGHT"?"selected":""}>Da esquerda para a direita</option></select></label><label>Foco <select id="focusLane" aria-label="Focar uma fase ou raia"><option value="">Diagrama inteiro</option>${d.elements.filter(e=>e.type==="lane").map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}</select></label></div>
+      <div class="reading-toolbar"><button class="button secondary ${overviewVisible?"":"active"}" id="fullFlowCanvas" aria-pressed="${!overviewVisible}">Fluxo completo</button><button class="button secondary ${overviewVisible?"active":""}" id="overviewCanvas" aria-pressed="${overviewVisible}" ${d.elements.some(e=>e.type==="lane")?"":"disabled"}>Visão por fases</button><button class="button secondary" id="organizeFlow">Organizar fluxo</button><button class="button secondary" id="undoLayout" ${layoutUndo?.diagramId===d.id?"":"disabled"}>Desfazer organização</button><label>Direção <select id="flowDirection" aria-label="Direção do fluxo"><option value="DOWN" ${(d.layoutDirection||(d.elements.some(e=>e.type==="lane"&&e.layout==="swimlane")?"RIGHT":"DOWN"))!=="RIGHT"?"selected":""}>De cima para baixo</option><option value="RIGHT" ${(d.layoutDirection||(d.elements.some(e=>e.type==="lane"&&e.layout==="swimlane")?"RIGHT":"DOWN"))==="RIGHT"?"selected":""}>Da esquerda para a direita</option></select></label><label>Foco <select id="focusLane" aria-label="Focar uma fase ou raia"><option value="">Diagrama inteiro</option>${d.elements.filter(e=>e.type==="lane").map(l=>`<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}</select></label></div>
       <div class="canvas-wrap ${overviewVisible?"overview-mode":""}" id="canvasWrap" style="${themeStyle(d.themeId)}"><div class="canvas" id="canvas"><div class="canvas-content" id="canvasContent">${d.elements.filter(e=>e.type==="lane").map(e=>renderElement(e,d.themeId)).join("")}<svg class="connections" id="connections" width="5000" height="5000" aria-label="Conectores"></svg>${d.elements.filter(e => e.type !== "connector" && e.type !== "lane").map(e=>renderElement(e,d.themeId)).join("")}</div></div>${renderPhaseOverview(d)}<div class="canvas-hint" id="canvasHint">Role para mover a tela; Ctrl + rolagem para aproximar</div><button class="diagram-minimap" id="diagramMinimap" aria-label="Minimapa: clique para centralizar uma região"><svg id="minimapSvg" viewBox="0 0 176 112" aria-hidden="true"></svg></button></div>
       <div class="bottom-bar"><span><i class="live-dot"></i> Salvamento automático</span><span>${itemSummary(d)}</span></div>
     </div>`;
@@ -195,10 +205,10 @@ function renderEditor(d) {
 
 function renderElement(e,themeId=currentDiagram()?.themeId) {
   if (e.type === "connector") return "";
-  if (e.type === "lane") return `<section class="swimlane" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>${e.kind==="phase"?"FASE":"RAIA"}</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
+  if (e.type === "lane") return `<section class="swimlane ${e.layout==="swimlane"?"timeline-lane":""}" data-lane="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="lane-label"><span>${e.kind==="phase"?"FASE":"RAIA"}</span><strong>${escapeHtml(e.name)}</strong><button class="lane-menu-button" data-lane-menu="${e.id}" title="Opções da raia">···</button></div><div class="lane-resize" data-resize-lane="${e.id}" title="Arraste para ajustar a altura"></div></section>`;
   if (e.type === "sticky") return `<article class="sticky" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;background:${e.color};width:${e.width || 220}px;height:${e.height || 190}px"><div class="sticky-head"><span class="drag-grip">⠿</span><div class="sticky-controls"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div></div><textarea class="sticky-text" data-text="${e.id}" placeholder="Escreva uma ideia...">${escapeHtml(e.text)}</textarea><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   if(e.type === "sequence") return `<article class="sequence-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width}px;height:${e.height}px"><div class="sequence-head"><strong>${escapeHtml(e.title||"Sequência")}</strong><div><button class="button secondary" data-edit-sequence="${e.id}">Editar sequência</button><button class="icon-button" data-delete="${e.id}" aria-label="Excluir sequência">×</button></div></div>${sequenceSvg(e.model,getTheme(themeId),"native-"+e.id)}</article>`;
-  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${e.color};` : ""}"><div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
+  if (e.type === "shape") return `<article class="shape-card ${escapeHtml(e.shape || "process")} ${e.flowStyle?"flow-node":""}" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 180}px;height:${e.height || 105}px;${e.colorMode === "custom" ? `--node-accent:${color(e.color)};` : ""}${e.borderColor&&e.colorMode!=="custom"?`--node-accent:${color(e.borderColor)};`:""}${e.fillColor?`--node-fill:${color(e.fillColor)};`:""}${e.textColor?`--node-text:${color(e.textColor)};`:""}${e.borderWidth?`--node-border:${Math.max(.5,Math.min(8,e.borderWidth))}px;`:""}">${e.shape==="decision"?`<svg class="decision-outline" width="100%" height="100%" viewBox="0 0 ${e.width||180} ${e.height||150}" preserveAspectRatio="none" aria-hidden="true"><polygon points="${(e.width||180)/2},1 ${(e.width||180)-1},${(e.height||150)/2} ${(e.width||180)/2},${(e.height||150)-1} 1,${(e.height||150)/2}"/></svg>`:""}<div class="shape-head"><button class="sticky-control" data-color="${e.id}" title="Mudar cor">●</button><button class="sticky-control" data-delete="${e.id}" title="Excluir">×</button></div><textarea data-text="${e.id}" placeholder="Texto da forma">${escapeHtml(e.text)}</textarea>${["top","right","bottom","left"].map(side=>`<button class="node-port ${side}" data-add-node="${e.id}" data-side="${side}" title="Adicionar item ${side === "top" ? "acima" : side === "right" ? "à direita" : side === "bottom" ? "abaixo" : "à esquerda"}">+</button>`).join("")}<div class="resize-handle" data-resize="${e.id}"></div></article>`;
   if (e.type === "mermaid-render") return `<article class="mermaid-card mermaid-visual" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 920}px;min-height:${e.height || 640}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>DIAGRAMA RENDERIZADO</span></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
   return `<article class="mermaid-card" data-element="${e.id}" style="left:${e.x}px;top:${e.y}px;width:${e.width || 390}px;min-height:${e.height || 250}px"><div class="mermaid-head"><div><span class="mermaid-symbol">⌘</span><strong>${escapeHtml(e.title || "Diagrama Mermaid")}</strong></div><div><button class="mermaid-action" data-convert-mermaid="${e.id}" title="Converter em formas editáveis">◇</button><button class="mermaid-action" data-edit-mermaid="${e.id}" title="Editar código">✎</button><button class="mermaid-action" data-delete="${e.id}" title="Excluir">×</button></div></div><div class="mermaid-render" data-render="${e.id}"><div class="render-loading">Renderizando diagrama…</div></div><div class="mermaid-foot"><span>MERMAID 11+</span><button data-edit-mermaid="${e.id}">Editar código</button></div><div class="resize-handle" data-resize="${e.id}"></div></article>`;
 }
@@ -206,7 +216,7 @@ function shouldShowOverview(d){return Boolean(d&&d.elements.filter(e=>e.type==="
 function renderPhaseOverview(d){
   const lanes=d.elements.filter(e=>e.type==="lane"),nodes=d.elements.filter(e=>e.type==="shape");
   const byId=new Map(d.elements.map(e=>[e.id,e]));
-  const members=lane=>nodes.filter(e=>e.laneId===lane.id||(!e.laneId&&e.x>=lane.x+176&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height));
+  const members=lane=>nodes.filter(e=>e.laneId===lane.id||(!e.laneId&&e.x>=lane.x+(lane.layout==="swimlane"?0:176)&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height));
   const cards=lanes.map((lane,index)=>{
     const steps=members(lane),keys=new Set(steps.map(e=>e.id)),destinations=new Map();
     for(const line of d.elements.filter(e=>e.type==="connector"&&keys.has(e.from)&&!keys.has(e.to))){
@@ -583,7 +593,7 @@ function startResize(ev, d, elementId) {
 }
 function updateLaneMembership(d,item){
   const cx=item.x+item.width/2,cy=item.y+item.height/2;
-  const lane=d.elements.filter(e=>e.type==="lane"&&cx>=e.x+176&&cx<=e.x+e.width&&cy>=e.y&&cy<=e.y+e.height).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
+  const lane=d.elements.filter(e=>e.type==="lane"&&cx>=e.x+(e.layout==="swimlane"?0:176)&&cx<=e.x+e.width&&cy>=e.y+(e.layout==="swimlane"?42:0)&&cy<=e.y+e.height).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
   if(lane)item.laneId=lane.id;else delete item.laneId;
 }
 function zoom(factor, point) {
@@ -671,7 +681,7 @@ function readDiagram(d){
   const focus=document.getElementById("focusLane")?.value;
   const nodes=d.elements.filter(e=>e.type!=="connector"&&e.type!=="lane");
   const lane=d.elements.find(e=>e.id===focus&&e.type==="lane");
-  const inLane=e=>e.laneId===focus||(lane&&e.x>=lane.x+176&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height);
+  const inLane=e=>e.laneId===focus||(lane&&e.x>=lane.x+(lane.layout==="swimlane"?0:176)&&e.x<lane.x+lane.width&&e.y>=lane.y&&e.y<lane.y+lane.height);
   const item=nodes.find(e=>e.id===selectedElement)||nodes.filter(e=>!lane||inLane(e)).sort((a,b)=>a.y-b.y||a.x-b.x)[0];
   const wrap=document.getElementById("canvasWrap");if(!item||!wrap)return;
   const readingWidth=item.type==="sequence"?Math.min(item.width,760):(item.width||180),readingHeight=item.type==="sequence"?Math.min(item.height,460):(item.height||105);
@@ -703,7 +713,7 @@ async function organizeDiagram(d){
   if(layoutBusy)return;
   if(!d.elements.some(e=>e.type==="shape")){for(const e of d.elements.filter(e=>e.type==="sequence")){const size=sequenceGeometry(e.model);e.width=size.width;e.height=size.height+40;}touchDiagram(d);render();fitDiagramToView(d);toast("Sequência organizada pela ordem das mensagens");return;}
   layoutBusy=true;const button=document.getElementById("organizeFlow");button.disabled=true;button.textContent="Organizando…";
-  const before=JSON.stringify(d.elements),direction=document.getElementById("flowDirection").value;
+  const before=JSON.stringify(d.elements),direction=d.elements.some(e=>e.type==="lane"&&e.layout==="swimlane")?"RIGHT":document.getElementById("flowDirection").value;
   try{
     const elements=await layoutElements(d.elements,direction);
     if(!state.diagrams.includes(d)||JSON.stringify(d.elements)!==before){toast("O quadro mudou durante a organização. Tente novamente.");return;}
@@ -812,5 +822,6 @@ function toast(message) { const el = document.getElementById("toast"); if (!el) 
 function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
 
 if (shareMode) render(); else bootWorkspace();
+
 
 

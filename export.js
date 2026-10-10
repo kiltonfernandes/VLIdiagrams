@@ -18,7 +18,7 @@ export function exportElements(elements,scope='full'){
   return structuredClone([lane,...members,...elements.filter(e=>e.type==='connector'&&ids.has(e.from)&&ids.has(e.to))]);
 }
 function shapeSvg(e,t){
-  const w=e.width||180,h=e.height||105,type=e.shape||'process',accent=color(e.colorMode==='custom'?e.color:({decision:t.decision,terminator:t.terminal,io:t.data,document:t.data,database:t.data,subprocess:t.subprocess}[type]||t.process));
+  const w=e.width||180,h=e.height||105,type=e.shape||'process',accent=color((e.colorMode==='custom'?e.color:e.borderColor||({decision:t.decision,terminator:t.terminal,io:t.data,document:t.data,database:t.data,subprocess:t.subprocess}[type]||t.process)));
   let outline=`<rect width="${w}" height="${h}" rx="${type==='terminator'?h/2:11}" fill="#fff" stroke="${accent}" stroke-width="1.5"/>`;
   if(type==='decision'){
     const points=`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`;
@@ -28,8 +28,10 @@ function shapeSvg(e,t){
   if(type==='document')outline=`<polygon points="0,0 ${w},0 ${w},${h*.84} ${w*.85},${h} ${w*.7},${h*.84} ${w*.55},${h} ${w*.4},${h*.84} ${w*.25},${h} ${w*.1},${h*.84} 0,${h}" fill="#fff" stroke="${accent}" stroke-width="1.5"/>`;
   if(type==='database')outline=`<path d="M 0 15 A ${w/2} 15 0 0 1 ${w} 15 V ${h-15} A ${w/2} 15 0 0 1 0 ${h-15} Z" fill="#fff" stroke="${accent}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="15" rx="${w/2}" ry="15" fill="#fff" stroke="${accent}" stroke-width="1.5"/>`;
   if(type==='subprocess')outline+=`<path d="M 12 0 V ${h} M ${w-12} 0 V ${h}" stroke="${accent}"/>`;
+  if(e.fillColor)outline=outline.replace(/fill="#[a-zA-Z0-9]+"/g,`fill="${color(e.fillColor,'#fff')}"`);
+  if(e.borderWidth)outline=outline.replace(/stroke-width="[\d.]+"/g,`stroke-width="${Math.min(8,Math.max(.5,e.borderWidth))}"`);
   const available=type==='decision'?w*.63:type==='io'?w*.65:w-28,lines=wrapText(e.text,available,13).length;
-  return `<g transform="translate(${e.x} ${e.y})">${outline}${textBlock(e.text,w/2,h/2-(lines-1)*9.425+4,available,{fill:t.ink,weight:600})}</g>`;
+  return `<g transform="translate(${e.x} ${e.y})">${outline}${textBlock(e.text,w/2,h/2-(lines-1)*9.425+4,available,{fill:e.textColor||t.ink,weight:500})}</g>`;
 }
 function overviewElements(diagram){
   const lanes=diagram.elements.filter(e=>e.type==='lane'),shapes=diagram.elements.filter(e=>e.type==='shape'),byId=new Map(shapes.map(e=>[e.id,e]));
@@ -55,7 +57,10 @@ export function buildDiagramSvg(diagram,{theme={},scope='full',transparent=false
   for(const c of lines){const nums=c.dPath.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)?.map(Number)||[];for(let i=0;i<nums.length;i+=2){xs.push(nums[i]);ys.push(nums[i+1]);}if(c.text&&c.label){const size=Array.from(c.text).length*7;xs.push(c.label.x-(c.label.anchor==='start'?0:size/2)-8,c.label.x+size+8);ys.push(c.label.y-20,c.label.y+10);}}
   const left=Math.min(...xs)-32,top=Math.min(...ys)-32,width=Math.ceil(Math.max(...xs)-left+32),height=Math.ceil(Math.max(...ys)-top+32);
   let body=`<defs><marker id="export-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="${color(t.connector)}"/></marker></defs><g transform="translate(${-left} ${-top})">`;
-  for(const e of nodes.filter(e=>e.type==='lane'))body+=`<g transform="translate(${e.x} ${e.y})"><rect width="${e.width}" height="${e.height}" rx="13" fill="#fff" stroke="${color(t.border)}"/><path d="M 13 0 H 176 V ${e.height} H 13 Q 0 ${e.height} 0 ${e.height-13} V 13 Q 0 0 13 0" fill="${color(t.laneHeader)}"/>${textBlock(e.kind==='phase'?'FASE':'RAIA',14,25,145,{anchor:'start',size:9,fill:t.connector})}${textBlock(e.name,14,48,146,{anchor:'start',fill:t.ink,weight:600})}</g>`;
+  for(const e of nodes.filter(e=>e.type==='lane')){
+    if(e.layout==='swimlane')body+=`<g transform="translate(${e.x} ${e.y})"><rect width="${e.width}" height="${e.height}" rx="6" fill="#f3f7fc" stroke="#8ca9ce"/>${textBlock(e.name,16,26,e.width-32,{anchor:'start',size:13,fill:t.ink,weight:600})}</g>`;
+    else body+=`<g transform="translate(${e.x} ${e.y})"><rect width="${e.width}" height="${e.height}" rx="13" fill="#fff" stroke="${color(t.border)}"/><path d="M 13 0 H 176 V ${e.height} H 13 Q 0 ${e.height} 0 ${e.height-13} V 13 Q 0 0 13 0" fill="${color(t.laneHeader)}"/>${textBlock(e.kind==='phase'?'FASE':'RAIA',14,25,145,{anchor:'start',size:9,fill:t.connector})}${textBlock(e.name,14,48,146,{anchor:'start',fill:t.ink,weight:600})}</g>`;
+  }
   for(const c of lines){body+=`<path d="${xml(c.dPath)}" fill="none" stroke="${color(t.connector)}" stroke-width="${c.stroke==='thick'?3:1.6}"${c.stroke==='dotted'?' stroke-dasharray="5 4"':''} marker-end="url(#export-arrow)"/>`;if(c.text&&c.label)body+=textBlock(c.text,c.label.x,c.label.y,Math.max(40,Array.from(c.text).length*8),{fill:t.ink,size:12,anchor:c.label.anchor||'middle'});}
   for(const e of nodes.filter(e=>e.type!=='lane')){
     if(e.type==='shape')body+=shapeSvg(e,t);
@@ -101,3 +106,4 @@ export async function downloadDiagram(result,{format='svg',quality=2,filename='d
   }
   const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename+'.'+format;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
+
