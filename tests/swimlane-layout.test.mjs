@@ -45,3 +45,31 @@ end`);
   const organized=await layoutElements(elements,'RIGHT');
   assert.deepEqual(organized.map(e=>e.id),elements.map(e=>e.id));
 });
+test('ungrouped decisions and end events remain in a responsible lane and advance across handoffs',async()=>{
+  const graph=fallbackFlowchartFromSource(`flowchart TD
+subgraph SALES["Gerente de Contas"]
+  A["Criar oportunidade"]
+  D["Ajustar cotação"]
+end
+subgraph SYSTEM["Salesforce"]
+  B["Validar cotação"]
+  E["Enviar contrato"]
+end
+A --> B
+B --> C{"Cotação válida?"}
+C -- "Não" --> D
+D --> B
+C -- "Sim" --> E
+E --> F(["Fim"])
+`);
+  const result=await nativeElements(graph);
+  const bySource=id=>result.find(e=>e.sourceId===id);
+  assert.equal(bySource('C').laneId,bySource('B').laneId);
+  assert.equal(bySource('F').laneId,bySource('E').laneId);
+  assert.ok(bySource('B').x>bySource('A').x);
+  assert.ok(bySource('C').x>bySource('B').x);
+  assert.ok(bySource('E').x>bySource('C').x);
+  assert.ok(bySource('F').x>bySource('E').x);
+  assert.equal(result.filter(e=>e.type==='connector').length,6);
+  for(const edge of result.filter(e=>e.type==='connector'))assert.ok(edge.route?.points.length>1);
+});

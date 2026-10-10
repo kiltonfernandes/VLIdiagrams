@@ -6,6 +6,28 @@ export function layoutSwimlanes(elements, offset={x:60,y:70}, reverse=false) {
   const links=elements.filter(e=>e.type==='connector'&&byId.has(e.from)&&byId.has(e.to));
   const outgoing=new Map(nodes.map(e=>[e.id,[]])), incoming=new Map(nodes.map(e=>[e.id,[]]));
   for(const edge of links){outgoing.get(edge.from).push(edge);incoming.get(edge.to).push(edge);delete edge.route;}
+  // Mermaid permits decisions and end events outside subgraphs. Give these
+  // steps the responsibility of their preceding step; use the next step for
+  // an ungrouped start. Never override an explicit subgraph membership.
+  const laneIds=new Set(lanes.map(l=>l.id));
+  for(let pass=0;pass<nodes.length;pass++){
+    let changed=false;
+    for(const node of nodes){
+      if(laneIds.has(node.laneId))continue;
+      const previous=incoming.get(node.id).map(e=>byId.get(e.from)).find(n=>laneIds.has(n?.laneId));
+      if(previous){node.laneId=previous.laneId;changed=true;}
+    }
+    if(!changed)break;
+  }
+  for(let pass=0;pass<nodes.length;pass++){
+    let changed=false;
+    for(const node of nodes){
+      if(laneIds.has(node.laneId))continue;
+      const next=outgoing.get(node.id).map(e=>byId.get(e.to)).find(n=>laneIds.has(n?.laneId));
+      if(next){node.laneId=next.laneId;changed=true;}
+    }
+    if(!changed)break;
+  }
   const negative=text=>/^(não|nao|no|false|erro|falha)$/i.test(String(text||'').trim());
   const rows=new Map(nodes.map(n=>[n.id,0]));
   // Put terminating side branches below the successful path. A branch which
@@ -22,25 +44,33 @@ export function layoutSwimlanes(elements, offset={x:60,y:70}, reverse=false) {
       while(pending.length){const id=pending.shift();if(id===decision.id||reachable.has(id)||visited.has(id))continue;visited.add(id);const node=byId.get(id);if(node.laneId===decision.laneId)rows.set(id,1);for(const edge of outgoing.get(id)||[])pending.push(edge.to);}
     }
   }
-  // Kahn ordering with deterministic cycle cuts. Back edges are routed later;
-  // they never cause an unbounded rank calculation.
+  // Ignore DFS back edges for ordering, while retaining them as connectors.
+  // Every other handoff advances time, including handoffs between lanes.
+  const backEdges=new Set(),visited=new Set(),active=new Set();
+  const visit=id=>{
+    visited.add(id);active.add(id);
+    for(const edge of outgoing.get(id)){
+      if(active.has(edge.to))backEdges.add(edge.id);
+      else if(!visited.has(edge.to))visit(edge.to);
+    }
+    active.delete(id);
+  };
+  for(const node of nodes)if(!visited.has(node.id))visit(node.id);
   const pending=new Set(nodes.map(n=>n.id)), ranks=new Map(), occupied=new Map();
-  const indegrees=new Map(nodes.map(n=>[n.id,incoming.get(n.id).filter(e=>e.from!==n.id).length]));
+  const indegrees=new Map(nodes.map(n=>[n.id,incoming.get(n.id).filter(e=>!backEdges.has(e.id)).length]));
   while(pending.size) {
     let next=nodes.find(n=>pending.has(n.id)&&indegrees.get(n.id)===0);
     if(!next)next=nodes.find(n=>pending.has(n.id));
     let rank=0;
     for(const edge of incoming.get(next.id)) {
-      if(!ranks.has(edge.from))continue;
-      const from=byId.get(edge.from);
-      const advances=from.laneId===next.laneId&&rows.get(from.id)===rows.get(next.id);
-      rank=Math.max(rank,ranks.get(from.id)+(advances?1:0));
+      if(backEdges.has(edge.id)||!ranks.has(edge.from))continue;
+      rank=Math.max(rank,ranks.get(edge.from)+1);
     }
     const rowKey=(next.laneId||'free')+':'+rows.get(next.id);
     if(!occupied.has(rowKey))occupied.set(rowKey,new Set());
     while(occupied.get(rowKey).has(rank))rank++;
     occupied.get(rowKey).add(rank);ranks.set(next.id,rank);pending.delete(next.id);
-    for(const edge of outgoing.get(next.id))if(pending.has(edge.to)&&edge.to!==next.id)indegrees.set(edge.to,Math.max(0,indegrees.get(edge.to)-1));
+    for(const edge of outgoing.get(next.id))if(pending.has(edge.to)&&!backEdges.has(edge.id))indegrees.set(edge.to,Math.max(0,indegrees.get(edge.to)-1));
   }
   const maxRank=Math.max(0,...ranks.values()), widths=Array(maxRank+1).fill(180);
   for(const node of nodes)widths[ranks.get(node.id)]=Math.max(widths[ranks.get(node.id)],node.width||180);
