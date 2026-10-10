@@ -1,4 +1,4 @@
-import { exportToolResult } from "../lib/render-diagram.js";
+import { exportToolResult, nativeElementsFromMermaid } from "../lib/render-diagram.js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { validBearer } from "../lib/auth.js";
@@ -52,23 +52,32 @@ function makeHandler(appOrigin) {
     state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ ...diagram, url: diagramUrl(diagram.id) });
   });
   server.registerTool("create_diagram_from_mermaid", {
-    description: "Cria um diagrama VLI a partir do código Mermaid. Fluxogramas são convertidos em formas, raias e conectores; sequenceDiagram vira uma sequência nativa com participantes e mensagens editáveis na próxima abertura do VLI. Use rótulos curtos, identificadores estáveis, aspas nos rótulos de fluxograma com pontuação e participantes declarados em ordem. Outros tipos permanecem como cartão Mermaid.",
+    description: "Cria e salva um diagrama VLI nativo e editável a partir do Mermaid. Fluxogramas viram formas, raias e conectores; sequenceDiagram vira participantes e mensagens nativas. O código Mermaid é mantido apenas como origem, nunca como cartão no quadro.",
     inputSchema: z.object({ title: z.string().min(1).max(160), mermaid: z.string().min(1).max(50000), folder_id: z.string().optional() })
   }, async ({ title, mermaid, folder_id }) => {
     const state = await readWorkspace();
     if (folder_id && !state.folders.some(item => item.id === folder_id)) return text("Pasta não encontrada.");
-    const now = Date.now(); const id = makeId();
-    const diagram = { id, title: title.trim(), folderId: folder_id || null, elements: [{ id: makeId(), type: "mermaid", title: title.trim(), code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }], sourceMermaid: mermaid, createdAt: now, updatedAt: now };
-    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, url: diagramUrl(id), message: "Diagrama salvo no VLI." });
+    const now = Date.now(), id = makeId();
+    let elements;
+    try { elements = await nativeElementsFromMermaid(mermaid, {}, makeId); }
+    catch (error) { return { isError:true, content:[{ type:"text", text:`Não foi possível converter o Mermaid em elementos nativos: ${error.message||"erro desconhecido"}` }] }; }
+    if (elements[0]?.type === "sequence") elements[0].title = title.trim();
+    const diagram = { id, title: title.trim(), folderId: folder_id || null, elements, sourceMermaid: mermaid, createdAt: now, updatedAt: now };
+    state.diagrams.unshift(diagram); await writeWorkspace(state); return text({ id, title: diagram.title, folderId: diagram.folderId, url: diagramUrl(id), message: "Diagrama nativo salvo no VLI." });
   });
   server.registerTool("update_diagram_from_mermaid", {
-    description: "Atualiza o código Mermaid de um diagrama VLI e o deixa renderizado como conteúdo principal do quadro.",
+    description: "Converte o Mermaid e substitui o conteúdo de um diagrama pelos seus elementos nativos editáveis. Nunca salva um cartão com código no quadro.",
     inputSchema: z.object({ diagram_id: z.string(), mermaid: z.string().min(1).max(50000), title: z.string().max(160).optional() })
   }, async ({ diagram_id, mermaid, title }) => {
     const state = await readWorkspace(); const diagram = state.diagrams.find(item => item.id === diagram_id);
     if (!diagram) return text("Diagrama não encontrado.");
-    diagram.title = title?.trim() || diagram.title; diagram.elements = [{ id: makeId(), type: "mermaid", title: diagram.title, code: mermaid, convertOnLoad: true, x: 120, y: 120, width: 720, height: 460 }]; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
-    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Código Mermaid atualizado." });
+    let elements;
+    try { elements = await nativeElementsFromMermaid(mermaid, {}, makeId); }
+    catch (error) { return { isError:true, content:[{ type:"text", text:`Não foi possível converter o Mermaid em elementos nativos: ${error.message||"erro desconhecido"}` }] }; }
+    diagram.title = title?.trim() || diagram.title;
+    if (elements[0]?.type === "sequence") elements[0].title = diagram.title;
+    diagram.elements = elements; diagram.sourceMermaid = mermaid; diagram.updatedAt = Date.now();
+    await writeWorkspace(state); return text({ id: diagram.id, title: diagram.title, url: diagramUrl(diagram.id), message: "Diagrama atualizado como elementos nativos." });
   });
   server.registerTool("export_diagram", {
     description: "Exporta um diagrama salvo em PNG ou SVG sem abrir o app. Aceita fluxogramas e sequenceDiagram de origem, formas nativas e sequências editáveis. Retorna nome, dimensões e URL de download protegida. PNG inclui imagem no retorno MCP quando tem até 2 MB; SVG inclui o arquivo vetorial como recurso. scope pode ser full, overview ou o ID de uma raia. A exportação não modifica o diagrama.",
