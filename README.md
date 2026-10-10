@@ -4,7 +4,7 @@ Editor pessoal de diagramas e quadros visuais, publicado no Vercel com persistê
 
 ## Recursos
 
-- Biblioteca pessoal com pastas e diagramas: criar, renomear, mover e excluir.
+- Biblioteca pessoal com árvore de pastas e subpastas aninhadas, além de criar, renomear, mover e excluir diagramas.
 - Editor visual com notas adesivas, formas de processo editáveis e redimensionáveis, conectores com setas e raias horizontais.
 - Raias com nome editável, altura ajustável e organização de etapas por área, equipe ou responsável.
 - Formas para passo, decisão, início/fim, entrada/saída, documento, armazenamento de dados e subprocesso.
@@ -22,5 +22,5 @@ Instale as dependências com `npm install`. Configure `TURSO_DATABASE_URL`, `TUR
 
 Pastas e diagramas ficam em uma linha JSON no Turso. A primeira abertura copia os dados locais deste navegador para o banco quando ele ainda estiver vazio. O editor usa uma sessão privada com cookie HttpOnly após você entrar com `VLI_MCP_TOKEN`. Um link publicado contém um retrato do quadro em modo de leitura dentro do próprio endereço. Qualquer pessoa com o link pode visualizar o conteúdo incluído nele.
 
-## Servidor MCP para o Notion\n\nO endpoint HTTP está em `/api/mcp` e exige `Authorization: Bearer <VLI_MCP_TOKEN>`. As ferramentas permitem listar, criar, renomear, mover e excluir pastas e diagramas, além de criar ou atualizar um diagrama com código Mermaid. O primeiro acesso ao banco cria automaticamente a tabela `vli_workspace`.\n
+## Servidor MCP para o Notion\n\nO endpoint HTTP está em `/api/mcp` e exige `Authorization: Bearer <VLI_MCP_TOKEN>`. As ferramentas permitem listar e organizar pastas aninhadas (use `parent_folder_id` ao criar uma subpasta), além de criar ou atualizar diagramas com código Mermaid. O primeiro acesso ao banco cria automaticamente a tabela `vli_workspace`.\n
 

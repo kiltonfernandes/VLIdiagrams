@@ -124,6 +124,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .nav-item.active > span:first-child { color: var(--accent); }
 .nav-item .count { margin-left: auto; color: var(--muted); font-size: 10px; }
 .folder-row { display: flex; align-items: center; gap: 2px; }
+.folder-toggle {
+  display: grid;
+  width: 20px;
+  height: 29px;
+  flex: 0 0 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9395a6;
+  font-size: 11px;
+}
+.folder-toggle:not(:disabled):hover { background: #f0eff7; color: var(--accent); }
+.folder-toggle:disabled { cursor: default; opacity: .45; }
+.folder-row[style] .nav-item { padding-left: calc(8px + var(--folder-depth, 0) * 12px); }
+.folder-children { min-width: 0; }
+.folder-node { min-width: 0; }
 .folder-row .nav-item { flex: 1; width: auto; min-width: 0; }
 .folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-count { margin-left: auto; color: var(--muted-light); font-size: 10px; }

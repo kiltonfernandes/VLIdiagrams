@@ -29,6 +29,7 @@ let selectedElement = null;
 let connectMode = false;
 let deleteHandlerBound = false;
 let activeViewFolderId = null;
+const collapsedFolderIds = new Set();
 let currentScale = 1;
 const MIN_SCALE = 0.02;
 let layoutUndo = null;
@@ -148,7 +149,7 @@ function render() {
         <button class="new-diagram" id="newDiagram"><span>＋</span> Novo diagrama</button>
         <div class="nav-section"><div class="nav-label">ESPAÇO DE TRABALHO <button class="icon-button tiny" id="newFolder" title="Criar pasta">＋</button></div>
           <button class="nav-item ${!diagram && !activeViewFolderId ? "active" : ""}" id="allDiagrams"><span>▦</span> Todos os diagramas <span class="count">${state.diagrams.length}</span></button>
-          <div id="folderList">${state.folders.map(f => `<div class="folder-row"><button class="nav-item folder-item ${(activeViewFolderId || activeFolderId()) === f.id ? "active" : ""}" data-folder="${f.id}"><span>▰</span><span class="folder-name">${escapeHtml(f.name)}</span><span class="folder-count">${state.diagrams.filter(d => d.folderId === f.id).length}</span></button><button class="row-more" data-folder-menu="${f.id}" title="Opções da pasta">···</button></div>`).join("")}</div>
+          <div id="folderList">${renderFolderTree()}</div>
         </div>
         <div class="sidebar-bottom"><div class="profile"><div class="avatar">K</div><div><b>Meu espaço</b><small>Sincronizado no Turso</small></div><button class="icon-button" id="settings" title="Configurações">⚙</button></div></div>
       </aside>
@@ -165,7 +166,7 @@ function render() {
 function renderLibrary() {
   return `<header class="topbar"><div><div class="eyebrow">MEU ESPAÇO</div><h1>Seus diagramas</h1></div><div class="top-actions"><button class="button secondary" id="importButton">Importar Mermaid</button><button class="button primary" id="newDiagramTop">＋ Novo diagrama</button></div></header>
     <section class="library-wrap"><div class="library-heading"><div><h2>Diagramas</h2><p>Organize suas ideias em pastas e abra qualquer quadro para editar.</p></div><div class="search-wrap"><span>⌕</span><input id="searchDiagrams" placeholder="Buscar diagramas" /></div></div>
-    ${state.diagrams.length ? `<div class="diagram-grid" id="diagramGrid">${state.diagrams.map(d => `<article class="diagram-card" data-card="${d.id}"><div class="card-open" role="button" tabindex="0" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}" title="Opções">···</button></div><div class="card-sub"><span>▰ ${escapeHtml(state.folders.find(f => f.id === d.folderId)?.name || "Sem pasta")}</span><span>· ${formatDate(d.updatedAt || d.createdAt)}</span></div></div></div></article>`).join("")}</div>` : `<div class="empty-state"><div class="empty-illustration"><span>▱</span><span>✦</span></div><h2>Seu primeiro quadro começa aqui</h2><p>Crie um diagrama e organize o espaço com Mermaid e notas adesivas.</p><button class="button primary" id="emptyNewDiagram">＋ Criar diagrama</button></div>`}
+    ${state.diagrams.length ? `<div class="diagram-grid" id="diagramGrid">${state.diagrams.map(d => `<article class="diagram-card" data-card="${d.id}"><div class="card-open" role="button" tabindex="0" data-open="${d.id}"><div class="card-preview"><div class="preview-grid"></div>${miniPreview(d)}</div><div class="card-meta"><div class="card-title"><h3>${escapeHtml(diagramTitle(d))}</h3><button class="row-more card-menu" data-diagram-menu="${d.id}" title="Opções">···</button></div><div class="card-sub"><span>▰ ${d.folderId ? escapeHtml(folderPath(d.folderId).map(folder=>folder.name).join(" / ")) : "Sem pasta"}</span><span>· ${formatDate(d.updatedAt || d.createdAt)}</span></div></div></div></article>`).join("")}</div>` : `<div class="empty-state"><div class="empty-illustration"><span>▱</span><span>✦</span></div><h2>Seu primeiro quadro começa aqui</h2><p>Crie um diagrama e organize o espaço com Mermaid e notas adesivas.</p><button class="button primary" id="emptyNewDiagram">＋ Criar diagrama</button></div>`}
     </section>`;
 }
 
@@ -229,8 +230,9 @@ function showOverview(value){
 
 function bindShell() {
   ["newDiagram", "newDiagramTop", "emptyNewDiagram"].forEach(idName => document.getElementById(idName)?.addEventListener("click", () => createDiagram()));
-  document.getElementById("newFolder")?.addEventListener("click", createFolder);
+  document.getElementById("newFolder")?.addEventListener("click", () => createFolder());
   document.getElementById("allDiagrams")?.addEventListener("click", () => { state.activeDiagramId = null; activeViewFolderId=null; render(); });
+  document.querySelectorAll("[data-toggle-folder]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); const folderId=el.dataset.toggleFolder; collapsedFolderIds.has(folderId) ? collapsedFolderIds.delete(folderId) : collapsedFolderIds.add(folderId); render(); }));
   document.querySelectorAll("[data-folder]").forEach(el => el.addEventListener("click", () => showFolder(el.dataset.folder)));
   document.querySelectorAll("[data-folder-menu]").forEach(el => el.addEventListener("click", ev => { ev.stopPropagation(); folderMenu(el.dataset.folderMenu); }));
   document.querySelectorAll("[data-open]").forEach(el => {
@@ -248,7 +250,7 @@ function bindShell() {
 function showSettings() {
   const url = `${location.origin}/api/mcp`;
   const root = document.getElementById("modalRoot");
-  root.innerHTML = `<div class="modal-backdrop" id="settingsBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h2>Conexão com o Notion</h2><p>Adicione este servidor MCP ao Notion para criar e organizar diagramas por lá.</p></div><button class="icon-button" data-close-settings>×</button></div><label class="field-label">Endereço do servidor MCP<input class="text-input" id="mcpUrl" readonly value="${escapeHtml(url)}" /></label><div class="connection-help"><b>Autenticação</b><p>Escolha Bearer token no Notion e use o valor de <code>VLI_MCP_TOKEN</code> que você guardou na Vercel. O token não é exibido nesta tela.</p><b>O agente pode</b><p>Listar, criar, renomear, mover e excluir pastas e diagramas, além de criar e atualizar diagramas com Mermaid.</p></div><div class="modal-actions"><button class="button secondary" data-close-settings>Fechar</button><button class="button primary" id="copyMcpUrl">Copiar endereço</button></div></section></div>`;
+  root.innerHTML = `<div class="modal-backdrop" id="settingsBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h2>Conexão com o Notion</h2><p>Adicione este servidor MCP ao Notion para criar diagramas e organizar pastas com subpastas por lá.</p></div><button class="icon-button" data-close-settings>×</button></div><label class="field-label">Endereço do servidor MCP<input class="text-input" id="mcpUrl" readonly value="${escapeHtml(url)}" /></label><div class="connection-help"><b>Autenticação</b><p>Escolha Bearer token no Notion e use o valor de <code>VLI_MCP_TOKEN</code> que você guardou na Vercel. O token não é exibido nesta tela.</p><b>O agente pode</b><p>Listar, criar, renomear, mover e excluir pastas e diagramas, além de criar e atualizar diagramas com Mermaid.</p></div><div class="modal-actions"><button class="button secondary" data-close-settings>Fechar</button><button class="button primary" id="copyMcpUrl">Copiar endereço</button></div></section></div>`;
   root.querySelectorAll("[data-close-settings]").forEach(button => button.addEventListener("click", closeModal));
   root.querySelector("#settingsBackdrop").addEventListener("click", event => { if (event.target.id === "settingsBackdrop") closeModal(); });
   root.querySelector("#copyMcpUrl").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); toast("Endereço MCP copiado"); closeModal(); } catch { const input = root.querySelector("#mcpUrl"); input.select(); document.execCommand("copy"); toast("Endereço MCP copiado"); closeModal(); } });
@@ -259,8 +261,38 @@ function createDiagram(folderId = null) {
   state.diagrams.unshift(d); state.activeDiagramId = d.id; persist(); render();
   const input = document.getElementById("diagramTitle"); input?.focus(); input?.select();
 }
-function createFolder() {
-  showNameDialog({title:"Criar pasta",label:"Nome da pasta",saveLabel:"Criar pasta",onSave:name=>{const folder={id:id(),name};state.folders.push(folder);persist();activeViewFolderId=folder.id;showFolder(folder.id);toast("Pasta criada");}});
+function folderChildren(parentId = null) {
+  return state.folders.filter(folder => (folder.parentId || null) === (parentId || null));
+}
+function folderPath(folderId) {
+  const path = [], seen = new Set();
+  let folder = state.folders.find(item => item.id === folderId);
+  while (folder && !seen.has(folder.id)) {
+    seen.add(folder.id); path.unshift(folder);
+    folder = folder.parentId ? state.folders.find(item => item.id === folder.parentId) : null;
+  }
+  return path;
+}
+function renderFolderTree(parentId = null, depth = 0, ancestors = new Set()) {
+  return folderChildren(parentId).map(folder => {
+    if (ancestors.has(folder.id)) return "";
+    const children = folderChildren(folder.id), collapsed = collapsedFolderIds.has(folder.id);
+    const nextAncestors = new Set(ancestors); nextAncestors.add(folder.id);
+    return `<div class="folder-node"><div class="folder-row" style="--folder-depth:${depth}">
+      <button class="folder-toggle" data-toggle-folder="${folder.id}" aria-label="${collapsed ? "Expandir" : "Recolher"} ${escapeHtml(folder.name)}" ${children.length ? "" : "disabled"}>${children.length ? (collapsed ? "▸" : "▾") : "·"}</button>
+      <button class="nav-item folder-item ${(activeViewFolderId || activeFolderId()) === folder.id ? "active" : ""}" data-folder="${folder.id}"><span>▰</span><span class="folder-name">${escapeHtml(folder.name)}</span><span class="folder-count">${state.diagrams.filter(d => d.folderId === folder.id).length}</span></button>
+      <button class="row-more" data-folder-menu="${folder.id}" title="Opções da pasta">···</button>
+    </div>${children.length && !collapsed ? `<div class="folder-children">${renderFolderTree(folder.id, depth + 1, nextAncestors)}</div>` : ""}</div>`;
+  }).join("");
+}
+function createFolder(parentId = null) {
+  const parent = parentId && state.folders.find(folder => folder.id === parentId);
+  const title = parent ? "Criar subpasta" : "Criar pasta";
+  showNameDialog({title,label:"Nome da pasta",saveLabel:parent ? "Criar subpasta" : "Criar pasta",onSave:name=>{
+    const folder={id:id(),name,parentId:parent?.id || null};state.folders.push(folder);persist();
+    if(parentId) collapsedFolderIds.delete(parentId);
+    activeViewFolderId=folder.id;showFolder(folder.id);toast(parent ? "Subpasta criada" : "Pasta criada");
+  }});
 }
 function showFolder(folderId) {
   state.activeDiagramId = null; activeViewFolderId=folderId; render();
@@ -282,8 +314,9 @@ function folderMenu(folderId) {
   const folder = state.folders.find(f => f.id === folderId); if (!folder) return;
   const anchor=document.querySelector(`[data-folder-menu="${folderId}"]`);
   openActionMenu(anchor,[
+    {label:"Criar subpasta",icon:"＋",run:()=>createFolder(folderId)},
     {label:"Renomear pasta",icon:"✎",run:()=>showNameDialog({title:"Renomear pasta",label:"Nome da pasta",value:folder.name,saveLabel:"Salvar",onSave:name=>{folder.name=name;persist();refreshLibrary();toast("Pasta renomeada");}})},
-    {label:"Excluir pasta",icon:"⌫",danger:true,run:()=>showConfirmDialog({title:"Excluir esta pasta?",message:"Os diagramas continuarão salvos e irão para Sem pasta.",confirmLabel:"Excluir pasta",onConfirm:()=>{state.diagrams.forEach(d=>{if(d.folderId===folderId)d.folderId=null;});state.folders=state.folders.filter(f=>f.id!==folderId);if(activeViewFolderId===folderId)activeViewFolderId=null;persist();render();toast("Pasta excluída");}})}
+    {label:"Excluir pasta",icon:"⌫",danger:true,run:()=>showConfirmDialog({title:"Excluir esta pasta?",message:"Os diagramas e subpastas serão mantidos e movidos para o nível acima.",confirmLabel:"Excluir pasta",onConfirm:()=>{const parentId=folder.parentId||null;state.diagrams.forEach(d=>{if(d.folderId===folderId)d.folderId=parentId;});state.folders.forEach(child=>{if(child.parentId===folderId)child.parentId=parentId;});state.folders=state.folders.filter(f=>f.id!==folderId);if(activeViewFolderId===folderId)activeViewFolderId=parentId;persist();render();toast("Pasta excluída");}})}
   ]);
 }
 function diagramMenu(diagramId) {
@@ -297,7 +330,7 @@ function diagramMenu(diagramId) {
 }
 function moveDiagramById(d) {
   const root=document.getElementById("modalRoot");let choice=d.folderId||"";
-  const choices=[{id:"",name:"Sem pasta"},...state.folders.map(f=>({id:f.id,name:f.name}))];
+  const choices=[{id:"",name:"Sem pasta"},...state.folders.map(f=>({id:f.id,name:folderPath(f.id).map(folder=>folder.name).join(" / ")}))];
   root.innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><section class="modal action-modal"><div class="modal-head"><div><div><h2>Mover diagrama</h2><p>Escolha onde “${escapeHtml(diagramTitle(d))}” ficará guardado.</p></div></div><button class="icon-button" data-close-modal>×</button></div><div class="folder-choice-list">${choices.map(f=>`<button class="folder-choice ${choice===f.id?"selected":""}" data-choice="${f.id}"><span class="choice-icon">▰</span><span>${escapeHtml(f.name)}</span><span class="choice-check">✓</span></button>`).join("")}</div><div class="modal-actions"><button class="button secondary" data-close-modal>Cancelar</button><button class="button primary" id="saveMove">Mover para pasta</button></div></section></div>`;
   root.querySelectorAll("[data-choice]").forEach(btn=>btn.addEventListener("click",()=>{choice=btn.dataset.choice;root.querySelectorAll("[data-choice]").forEach(x=>x.classList.toggle("selected",x===btn));}));
   root.querySelectorAll("[data-close-modal]").forEach(btn=>btn.addEventListener("click",closeModal));

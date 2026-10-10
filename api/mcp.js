@@ -11,11 +11,14 @@ function makeHandler(appOrigin) {
   const text = (value) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }] });
   const makeId = () => crypto.randomUUID();
 
-  server.registerTool("list_folders", { description: "Lista as pastas do espaço de trabalho VLI.", inputSchema: z.object({}) }, async () => text((await readWorkspace()).folders));
+  server.registerTool("list_folders", { description: "Lista as pastas e seus vínculos pai/filho no espaço de trabalho VLI.", inputSchema: z.object({}) }, async () => text((await readWorkspace()).folders));
   server.registerTool("create_folder", {
-    description: "Cria uma pasta no espaço VLI.", inputSchema: z.object({ name: z.string().min(1).max(100) })
-  }, async ({ name }) => {
-    const state = await readWorkspace(); const folder = { id: makeId(), name: name.trim() };
+    description: "Cria uma pasta raiz ou uma subpasta. Informe parent_folder_id para aninhar a pasta em outra.",
+    inputSchema: z.object({ name: z.string().min(1).max(100), parent_folder_id: z.string().optional() })
+  }, async ({ name, parent_folder_id }) => {
+    const state = await readWorkspace();
+    if (parent_folder_id && !state.folders.some(item => item.id === parent_folder_id)) return text("Pasta pai não encontrada.");
+    const folder = { id: makeId(), name: name.trim(), parentId: parent_folder_id || null };
     state.folders.push(folder); await writeWorkspace(state); return text(folder);
   });
   server.registerTool("rename_folder", {
@@ -25,11 +28,14 @@ function makeHandler(appOrigin) {
     if (!folder) return text("Pasta não encontrada."); folder.name = name.trim(); await writeWorkspace(state); return text(folder);
   });
   server.registerTool("delete_folder", {
-    description: "Exclui uma pasta. Os diagramas dela ficam sem pasta.", inputSchema: z.object({ folder_id: z.string() })
+    description: "Exclui uma pasta; diagramas e subpastas são preservados no nível pai.", inputSchema: z.object({ folder_id: z.string() })
   }, async ({ folder_id }) => {
-    const state = await readWorkspace(); state.folders = state.folders.filter(item => item.id !== folder_id);
-    state.diagrams.forEach(diagram => { if (diagram.folderId === folder_id) diagram.folderId = null; });
-    await writeWorkspace(state); return text("Pasta excluída; diagramas preservados.");
+    const state = await readWorkspace();
+    const parentId = state.folders.find(item => item.id === folder_id)?.parentId || null;
+    state.folders = state.folders.filter(item => item.id !== folder_id);
+    state.diagrams.forEach(diagram => { if (diagram.folderId === folder_id) diagram.folderId = parentId; });
+    state.folders.forEach(folder => { if (folder.parentId === folder_id) folder.parentId = parentId; });
+    await writeWorkspace(state); return text("Pasta excluída; diagramas e subpastas movidos para o nível acima.");
   });
   server.registerTool("list_diagrams", {
     description: "Lista os diagramas, com IDs, pasta e data de atualização.", inputSchema: z.object({ folder_id: z.string().optional() })
