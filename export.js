@@ -21,8 +21,7 @@ function shapeSvg(e,t){
   const w=e.width||180,h=e.height||105,type=e.shape||'process',accent=color(e.colorMode==='custom'?e.color:({decision:t.decision,terminator:t.terminal,io:t.data,document:t.data,database:t.data,subprocess:t.subprocess}[type]||t.process));
   let outline=`<rect width="${w}" height="${h}" rx="${type==='terminator'?h/2:11}" fill="#fff" stroke="${accent}" stroke-width="1.5"/>`;
   if(type==='decision'){
-    const dw=w*.6,dh=h*.72,cx=w/2,cy=h/2,s=Math.SQRT1_2;
-    const points=[[-dw/2,-dh/2],[dw/2,-dh/2],[dw/2,dh/2],[-dw/2,dh/2]].map(([x,y])=>`${cx+(x-y)*s},${cy+(x+y)*s}`).join(' ');
+    const points=`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`;
     outline=`<polygon points="${points}" fill="#fffaf0" stroke="${accent}" stroke-width="2"/>`;
   }
   if(type==='io')outline=`<polygon points="${w*.18},0 ${w},0 ${w*.82},${h} 0,${h}" fill="#fff" stroke="${accent}" stroke-width="1.5"/>`;
