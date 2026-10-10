@@ -28,10 +28,11 @@ function makeHandler(appOrigin) {
     if (!folder) return text("Pasta não encontrada."); folder.name = name.trim(); await writeWorkspace(state); return text(folder);
   });
   server.registerTool("delete_folder", {
-    description: "Exclui uma pasta. Os diagramas dela ficam sem pasta.", inputSchema: z.object({ folder_id: z.string() })
+    description: "Exclui uma pasta; diagramas e subpastas são preservados no nível pai.", inputSchema: z.object({ folder_id: z.string() })
   }, async ({ folder_id }) => {
-    const state = await readWorkspace(); state.folders = state.folders.filter(item => item.id !== folder_id);
+    const state = await readWorkspace();
     const parentId = state.folders.find(item => item.id === folder_id)?.parentId || null;
+    state.folders = state.folders.filter(item => item.id !== folder_id);
     state.diagrams.forEach(diagram => { if (diagram.folderId === folder_id) diagram.folderId = parentId; });
     state.folders.forEach(folder => { if (folder.parentId === folder_id) folder.parentId = parentId; });
     await writeWorkspace(state); return text("Pasta excluída; diagramas e subpastas movidos para o nível acima.");
