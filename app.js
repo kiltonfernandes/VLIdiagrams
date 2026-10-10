@@ -1,5 +1,5 @@
 import { DEFAULT_THEME_ID, diagramThemes, getTheme } from "./themes.js";
-import { snapshotMermaid, nativeElements } from "./mermaid-native.js";
+import { fallbackFlowchartFromSource, snapshotMermaid, nativeElements } from "./mermaid-native.js";
 import { routeConnection } from "./connections.js";
 import { layoutElements, geometryKey, diagramBounds } from "./layout.js";
 import { sequenceGeometry, sequenceSvg, validateSequence } from "./sequence.js";
@@ -633,8 +633,12 @@ async function renderSvg(source, renderId) {
 
 async function convertMermaidFlowchart(source,offset={x:0,y:0}) {
   const graph=await serializeMermaid(async()=>{
-    const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizeMermaidSource(source));
-    return snapshotMermaid(parsed,plainMermaidLabel);
+    try {
+      const mermaid=await getMermaid(),parsed=await mermaid.mermaidAPI.getDiagramFromText(normalizeMermaidSource(source));
+      return snapshotMermaid(parsed,plainMermaidLabel,source);
+    } catch (error) {
+      return fallbackFlowchartFromSource(source,plainMermaidLabel);
+    }
   });
   return nativeElements(graph,offset);
 }
