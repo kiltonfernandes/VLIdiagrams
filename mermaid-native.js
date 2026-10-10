@@ -57,7 +57,7 @@ export function fallbackFlowchartFromSource(source, plainMermaidLabel=value=>Str
     if (!line || /^(flowchart|graph|subgraph|end|classDef|style|linkStyle)\b/i.test(line)) continue;
     for (const match of line.matchAll(/\b([A-Za-z_][\w-]*)\s*(\[\[(.*?)\]\]|\[(.*?)\]|\{(.*?)\}|\((.*?)\))?/g)) {
       const [, id, token, doubleBracket, bracket, diamond, rounded] = match;
-      if (!token && !/(-->|==>|-.->|---)/.test(line)) continue;
+      if (!token) continue;
       addNode(id, doubleBracket ?? bracket ?? diamond ?? rounded ?? id, diamond !== undefined ? "diamond" : rounded !== undefined ? "stadium" : "rect");
     }
     const parts = line.split(/(?:-->|==>|-.->|---)/).map(part=>part.replace(/^\s*\|[^|]*\|\s*/, "").trim());
